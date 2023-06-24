@@ -1,0 +1,25 @@
+[package]
+name = "integration_testing"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+activitypub_federation.workspace = true
+actix-web = "4.3.1"
+anyhow.workspace = true
+async-stream = "0.3.5"
+async-trait = "0.1.68"
+futures-core = "0.3.28"
+mime = "0.3.17"
+serde.workspace = true
+serde_json.workspace = true
+structopt = "0.3.26"
+time = { version = "0.3.22", features = ["serde"] }
+tokio = { workspace = true }
+tokio-stream = "0.1.14"
+tracing.workspace = true
+tracing-subscriber = "0.3.17"
+url.workspace = true
+zstd = "0.12.3"
