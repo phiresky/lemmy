@@ -1,7 +1,6 @@
 use activitypub_federation::{
   activity_queue::send_activity,
-  config::{Data, FederationConfig, FederationMiddleware},
-  protocol::context::WithContext,
+  config::{Data, FederationConfig},
   traits::{ActivityHandler, Actor, Object},
 };
 use actix_web::{
@@ -10,37 +9,47 @@ use actix_web::{
 use anyhow::{Context, Result};
 use async_stream::stream;
 use async_trait::async_trait;
+use clap::Parser;
 use futures_core::stream::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Deserializer, Value};
-use std::{collections::HashMap, fmt::Display, path::Path, pin::pin, str::FromStr};
-use structopt::StructOpt;
+use std::{collections::HashMap, fmt::Display, path::Path, pin::pin, str::FromStr, time::Instant};
 use time::format_description::well_known::Rfc3339;
 use tokio_stream::StreamExt;
 use url::Url;
-
 const SERVER_URL: &str = "http://reddit.com.localhost:5313";
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct Options {
-  listen_port: u16,
-  server: Url,
+  /// at which host and port we listen
+  #[arg(default_value_t=Url::parse("http://reddit.com.localhost:5313").unwrap())]
+  local_server: Url,
+  /// at which host and port we send federation events to
+  remote_server: Url,
+  /// the root directory of the reddit dump. this directory should contain the files `comments/RC_2022-12.zst` and `submissions/RS_2022-12.zst`
   input_dir: String,
+  /// when this number of events have been sent, stop
+  #[arg(default_value_t = 10000)]
+  limit: i64,
+  /// skip this number of entries from the input files to make the ratio from comment to post more realistic (because many comments are for older posts we don't have)
+  #[arg(default_value_t = 100000)]
+  skip: i64,
 }
 #[derive(Debug, Deserialize, Clone)]
 struct Submission {
-  url: String,                      // "https://i.redd.it/t0zqz3vuw43a1.jpg",
-  crosspost_parent: Option<String>, // "t3_z8rznr",
-  crosspost_parent_list: Option<Vec<Submission>>,
-  author: String,                  // "icepirate87",
-  permalink: String,               // "/r/u_icepirate87/comments/z97uwu/meirl_i_love_subtitles/",
-  created_utc: f64,                // unix seconds 1669852800,
-  id: String,                      // "z97uwu",
-  subreddit: String,               // u_icepirate87
-  subreddit_name_prefixed: String, // "u/icepirate87",
+  url: String, // "https://i.redd.it/t0zqz3vuw43a1.jpg",
+  //crosspost_parent: Option<String>, // "t3_z8rznr",
+  //crosspost_parent_list: Option<Vec<Submission>>,
+  author: String,    // "icepirate87",
+  permalink: String, // "/r/u_icepirate87/comments/z97uwu/meirl_i_love_subtitles/",
+  created_utc: f64,  // unix seconds 1669852800,
+  id: String,        // "z97uwu",
+  subreddit: String, // u_icepirate87
+  //subreddit_name_prefixed: String, // "u/icepirate87",
   title: String,
   selftext: String,
   /*
+  // other properties we don't need rn
       "all_awardings": [],
       "allow_live_comments": false,
       "archived": false,
@@ -139,14 +148,15 @@ struct Comment {
   author: String,
   id: String, // "iyfeo5a",
   permalink: String,
-  link_id: String,                 // "t3_z8ze4k",
-  subreddit: String,               // "chicagofood",
-  subreddit_name_prefixed: String, // "r/chicagofood",
-  parent_id: String,               // "t1_iyecr2i",
-  score: i64,
+  //link_id: String,                 // "t3_z8ze4k",
+  subreddit: String, // "chicagofood",
+  //subreddit_name_prefixed: String, // "r/chicagofood",
+  parent_id: String, // "t1_iyecr2i",
+  //score: i64,
   // seconds. 1669852800
   created_utc: f64,
   /*
+  // other properties we don't need rn
   all_awardings: [],
   archived: false,
   associated_award: null,
@@ -214,6 +224,7 @@ enum SubmissionOrComment {
   Submission(Submission),
   Comment(Comment),
 }
+/// load the comments and posts file and intermingle them ordered by time
 async fn import_merged_reddit_dump(
   source_dir: &Path,
   month: &str,
@@ -233,7 +244,7 @@ async fn import_merged_reddit_dump(
           next_comment = comment_stream.next().await.transpose()?;
         }
         (Some(_), None) => panic!("impossible, covered above"),
-        (_, Some(p)) => {
+        (_, Some(_)) => {
           yield Ok(SubmissionOrComment::Submission(next_post.expect("must exist")));
           next_post = post_stream.next().await.transpose()?;
         }
@@ -263,14 +274,11 @@ impl ActivityHandler for ToApub {
     &self.actor
   }
 
-  async fn verify<'life0, 'life1>(
-    &'life0 self,
-    data: &'life1 Data<Self::DataType>,
-  ) -> Result<(), Self::Error> {
+  async fn verify(&self, _data: &Data<Self::DataType>) -> Result<(), Self::Error> {
     todo!()
   }
 
-  async fn receive(self, data: &Data<Self::DataType>) -> Result<(), Self::Error> {
+  async fn receive(self, _data: &Data<Self::DataType>) -> Result<(), Self::Error> {
     todo!()
   }
 }
@@ -285,24 +293,24 @@ impl Object for RedditActor {
   type Error = anyhow::Error;
 
   async fn read_from_id(
-    object_id: Url,
-    data: &Data<Self::DataType>,
+    _object_id: Url,
+    _data: &Data<Self::DataType>,
   ) -> Result<Option<Self>, Self::Error> {
     todo!();
   }
 
-  async fn into_json(self, data: &Data<Self::DataType>) -> Result<Self::Kind, Self::Error> {
+  async fn into_json(self, _data: &Data<Self::DataType>) -> Result<Self::Kind, Self::Error> {
     todo!();
   }
 
   async fn verify(
-    json: &Self::Kind,
-    expected_domain: &Url,
-    data: &Data<Self::DataType>,
+    _json: &Self::Kind,
+    _expected_domain: &Url,
+    _data: &Data<Self::DataType>,
   ) -> Result<(), Self::Error> {
     todo!()
   }
-  async fn from_json(json: Self::Kind, data: &Data<Self::DataType>) -> Result<Self, Self::Error> {
+  async fn from_json(_json: Self::Kind, _data: &Data<Self::DataType>) -> Result<Self, Self::Error> {
     todo!()
   }
 }
@@ -609,13 +617,23 @@ async fn http_get_user(name: web::Path<String>) -> std::result::Result<impl Resp
 
 pub async fn go() -> Result<()> {
   tracing_subscriber::fmt::init();
-  let opt = Options::from_args();
-  let mut stream = pin!(import_merged_reddit_dump(&Path::new(&opt.input_dir), "2022-12").await?);
+  let opt = Options::parse();
+  let mut stream = pin!(
+    import_merged_reddit_dump(&Path::new(&opt.input_dir), "2022-12")
+      .await?
+      .skip((opt.skip - 1) as usize)
+  );
+  {
+    let now = Instant::now();
+    stream.next().await; // ensure one is read to enforce skipping now
+    tracing::info!("skipping {} took {:.2?}", opt.skip, now.elapsed());
+  }
   let reddit_actor = RedditActor {};
-  let data = FederationConfig::builder()
+  let fed = FederationConfig::builder()
     .domain("reddit.com.local")
-    .debug(true)
+    .debug(false)
     .app_data(())
+    .worker_count(100)
     .build()
     .await?;
   let server = HttpServer::new(|| {
@@ -623,26 +641,40 @@ pub async fn go() -> Result<()> {
       .service(http_get_user)
       .service(http_get_community)
   })
-  .bind(("127.0.0.1", opt.listen_port))?
+  .bind((
+    "127.0.0.1",
+    opt.local_server.port_or_known_default().unwrap(),
+  ))?
   .disable_signals()
   .run();
   // server.await;
 
   tokio::task::spawn(server);
-  let data = data.to_request_data();
+  let data = fed.to_request_data();
   // keep seen posts/comments in memory to make child comments reference them
   let mut posts_cache: HashMap<String, Submission> = HashMap::new();
   let mut comments_cache: HashMap<String, Comment> = HashMap::new();
+  let mut count = 0;
 
+  let start = Instant::now();
   while let Some(res) = stream.next().await {
+    if count >= opt.limit {
+      tracing::info!("reached limit of {count} sends, exiting");
+      break;
+    }
+    let inboxes = vec![opt.remote_server.clone()];
     match res? {
       SubmissionOrComment::Submission(post) => {
         let post_apub = post.to_activitypub().context("converting post to apub")?;
         if let Some(post_apub) = post_apub {
-          tracing::info!("sending post {:?}", post_apub);
-          log::info!("time: {}", post_apub.raw);
+          tracing::info!(
+            "sending post {} {}",
+            post.id,
+            post_apub.raw["object"]["published"]
+          );
           posts_cache.insert(post.id.clone(), post.clone());
-          send_activity(post_apub, &reddit_actor, vec![opt.server.clone()], &data).await?;
+          count += 1;
+          send_activity(post_apub, &reddit_actor, inboxes.clone(), &data).await?;
         }
       }
       SubmissionOrComment::Comment(comment) => {
@@ -650,12 +682,22 @@ pub async fn go() -> Result<()> {
           .to_activitypub(&comments_cache, &posts_cache)
           .context("converting comment to apub")?;
         if let Some(comment_apub) = comment_apub {
-          tracing::info!("sending comment {:?}", comment_apub);
+          tracing::info!(
+            "sending comment {} {}",
+            comment.id,
+            comment_apub.raw["object"]["published"]
+          );
           comments_cache.insert(comment.id.clone(), comment.clone());
-          send_activity(comment_apub, &reddit_actor, vec![opt.server.clone()], &data).await?;
+          count += 1;
+          send_activity(comment_apub, &reddit_actor, inboxes.clone(), &data).await?;
         }
       }
     }
   }
+  tracing::warn!("sending {} took {:.2?}", count, start.elapsed());
+  drop(data);
+  let start = Instant::now();
+  fed.shutdown(false).await?;
+  tracing::warn!("clearing queue took {:.2?}", start.elapsed());
   Ok(())
 }

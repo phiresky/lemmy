@@ -11,11 +11,11 @@ actix-web = "4.3.1"
 anyhow.workspace = true
 async-stream = "0.3.5"
 async-trait = "0.1.68"
+clap = { version = "4.3.8", features = ["derive"] }
 futures-core = "0.3.28"
 mime = "0.3.17"
 serde.workspace = true
 serde_json.workspace = true
-structopt = "0.3.26"
 time = { version = "0.3.22", features = ["serde"] }
 tokio = { workspace = true }
 tokio-stream = "0.1.14"
