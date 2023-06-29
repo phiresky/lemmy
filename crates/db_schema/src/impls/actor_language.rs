@@ -4,12 +4,8 @@ use crate::{
   schema::{local_site, site, site_language},
   source::{
     actor_language::{
-      CommunityLanguage,
-      CommunityLanguageForm,
-      LocalUserLanguage,
-      LocalUserLanguageForm,
-      SiteLanguage,
-      SiteLanguageForm,
+      CommunityLanguage, CommunityLanguageForm, LocalUserLanguage, LocalUserLanguageForm,
+      SiteLanguage, SiteLanguageForm,
     },
     language::Language,
     site::Site,
@@ -21,14 +17,10 @@ use diesel::{
   dsl::{count, exists},
   insert_into,
   result::Error,
-  select,
-  ExpressionMethods,
-  QueryDsl,
+  select, ExpressionMethods, QueryDsl,
 };
 use diesel_async::{
-  pooled_connection::deadpool::Object as PooledConnection,
-  AsyncPgConnection,
-  RunQueryDsl,
+  pooled_connection::deadpool::Object as PooledConnection, AsyncPgConnection, RunQueryDsl,
 };
 use lemmy_utils::error::LemmyError;
 use tokio::sync::OnceCell;
@@ -41,9 +33,7 @@ impl LocalUserLanguage {
     for_local_user_id: LocalUserId,
   ) -> Result<Vec<LanguageId>, Error> {
     use crate::schema::local_user_language::dsl::{
-      language_id,
-      local_user_id,
-      local_user_language,
+      language_id, local_user_id, local_user_language,
     };
     let conn = &mut get_conn(pool).await?;
 
@@ -233,9 +223,7 @@ impl CommunityLanguage {
     for_instance_id: InstanceId,
   ) -> Result<(), Error> {
     use crate::schema::{
-      community::dsl as c,
-      community_language::dsl as cl,
-      site_language::dsl as sl,
+      community::dsl as c, community_language::dsl as cl, site_language::dsl as sl,
     };
     let community_languages: Vec<LanguageId> = cl::community_language
       .left_outer_join(sl::site_language.on(cl::language_id.eq(sl::language_id)))
@@ -293,6 +281,14 @@ impl CommunityLanguage {
       return Ok(());
     }
 
+    let form = lang_ids
+            .into_iter()
+            .map(|language_id| CommunityLanguageForm {
+              community_id: for_community_id,
+              language_id,
+            })
+            .collect::<Vec<_>>();
+
     conn
       .build_transaction()
       .run(|conn| {
@@ -302,16 +298,19 @@ impl CommunityLanguage {
           delete(community_language.filter(community_id.eq(for_community_id)))
             .execute(conn)
             .await?;
-
-          for l in lang_ids {
-            let form = CommunityLanguageForm {
-              community_id: for_community_id,
-              language_id: l,
-            };
-            insert_into(community_language)
-              .values(form)
-              .get_result::<Self>(conn)
-              .await?;
+          
+          let insert_res = insert_into(community_language)
+            .values(form)
+            .get_result::<Self>(conn)
+            .await;
+          use diesel::result::DatabaseErrorKind::UniqueViolation;
+          if let Err(Error::DatabaseError(UniqueViolation, x)) = insert_res {
+            tracing::warn!("unique error: {x:#?}");
+            // community_language_community_id_language_id_key
+            // race condition: this function was probably called simultaneously from another caller. ignore error
+            return Ok(());
+          } else {
+            insert_res?;
           }
           Ok(())
         }) as _
@@ -393,17 +392,8 @@ mod tests {
   use super::*;
   use crate::{
     impls::actor_language::{
-      convert_read_languages,
-      convert_update_languages,
-      default_post_language,
-      get_conn,
-      CommunityLanguage,
-      DbPool,
-      Language,
-      LanguageId,
-      LocalUserLanguage,
-      QueryDsl,
-      RunQueryDsl,
+      convert_read_languages, convert_update_languages, default_post_language, get_conn,
+      CommunityLanguage, DbPool, Language, LanguageId, LocalUserLanguage, QueryDsl, RunQueryDsl,
       SiteLanguage,
     },
     source::{
