@@ -52,6 +52,7 @@ impl From<&VoteType> for i16 {
 
 #[async_trait::async_trait]
 impl InCommunity for Vote {
+  #[tracing::instrument(skip_all)]
   async fn community(&self, context: &Data<LemmyContext>) -> Result<ApubCommunity, LemmyError> {
     let community = self
       .object

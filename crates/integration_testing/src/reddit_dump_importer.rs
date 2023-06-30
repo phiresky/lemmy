@@ -4,7 +4,14 @@ use activitypub_federation::{
   traits::{ActivityHandler, Actor, Object},
 };
 use actix_web::{
-  get, http::header::ContentType, web, App, HttpResponse, HttpServer, Responder, ResponseError,
+  get,
+  http::header::ContentType,
+  web,
+  App,
+  HttpResponse,
+  HttpServer,
+  Responder,
+  ResponseError,
 };
 use anyhow::{Context, Result};
 use async_stream::stream;
@@ -25,14 +32,16 @@ struct Options {
   #[arg(default_value_t=Url::parse("http://reddit.com.localhost:5313").unwrap())]
   local_server: Url,
   /// at which host and port we send federation events to
+  #[arg(long)]
   remote_server: Url,
   /// the root directory of the reddit dump. this directory should contain the files `comments/RC_2022-12.zst` and `submissions/RS_2022-12.zst`
+  #[arg(long)]
   input_dir: String,
   /// when this number of events have been sent, stop
-  #[arg(default_value_t = 10000)]
+  #[arg(default_value_t = 10000, long)]
   limit: i64,
   /// skip this number of entries from the input files to make the ratio from comment to post more realistic (because many comments are for older posts we don't have)
-  #[arg(default_value_t = 100000)]
+  #[arg(default_value_t = 100000, long)]
   skip: i64,
 }
 #[derive(Debug, Deserialize, Clone)]
@@ -283,6 +292,7 @@ impl ActivityHandler for ToApub {
   }
 }
 
+#[derive(Debug)]
 struct RedditActor {}
 #[async_trait]
 impl Object for RedditActor {
@@ -621,7 +631,7 @@ pub async fn go() -> Result<()> {
   let mut stream = pin!(
     import_merged_reddit_dump(&Path::new(&opt.input_dir), "2022-12")
       .await?
-      .skip((opt.skip - 1) as usize)
+      .skip((opt.skip - 1).try_into()?)
   );
   {
     let now = Instant::now();
@@ -632,6 +642,7 @@ pub async fn go() -> Result<()> {
   let fed = FederationConfig::builder()
     .domain("reddit.com.local")
     .debug(false)
+    .allow_http_urls(true)
     .app_data(())
     .worker_count(100)
     .build()

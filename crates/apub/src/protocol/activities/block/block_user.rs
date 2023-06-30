@@ -43,6 +43,7 @@ pub struct BlockUser {
 
 #[async_trait::async_trait]
 impl InCommunity for BlockUser {
+  #[tracing::instrument(skip_all)]
   async fn community(&self, context: &Data<LemmyContext>) -> Result<ApubCommunity, LemmyError> {
     let target = self.target.dereference(context).await?;
     let community = match target {

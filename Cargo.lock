@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "activitypub_federation"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "activitystreams-kinds",
  "actix-web",

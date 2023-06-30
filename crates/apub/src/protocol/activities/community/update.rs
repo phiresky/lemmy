@@ -34,6 +34,7 @@ pub struct UpdateCommunity {
 
 #[async_trait::async_trait]
 impl InCommunity for UpdateCommunity {
+  #[tracing::instrument(skip_all)]
   async fn community(&self, context: &Data<LemmyContext>) -> Result<ApubCommunity, LemmyError> {
     let community: ApubCommunity = self.object.id.clone().dereference(context).await?;
     if let Some(audience) = &self.audience {

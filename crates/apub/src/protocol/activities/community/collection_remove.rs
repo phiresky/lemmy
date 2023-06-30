@@ -33,6 +33,7 @@ pub struct CollectionRemove {
 
 #[async_trait::async_trait]
 impl InCommunity for CollectionRemove {
+  #[tracing::instrument(skip_all)]
   async fn community(&self, context: &Data<LemmyContext>) -> Result<ApubCommunity, LemmyError> {
     let (community, _) =
       Community::get_by_collection_url(context.pool(), &self.clone().target.into()).await?;

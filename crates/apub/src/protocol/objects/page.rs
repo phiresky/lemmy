@@ -204,11 +204,16 @@ impl InCommunity for Page {
         loop {
           if let Some(cid) = iter.next() {
             let cid = ObjectId::from(cid.clone());
-            if let Ok(c) = cid.dereference(context).await {
-              break c;
+            match cid.dereference(context).await {
+              Ok(c) => {
+                break c;
+              }
+              Err(e) => {
+                tracing::warn!("could not dereference community {cid}: {e}");
+              }
             }
           } else {
-            return Err(LemmyError::from_message("No community found in cc"));
+            return Err(LemmyError::from_message("No community found in cc."));
           }
         }
       }

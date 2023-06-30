@@ -35,6 +35,7 @@ pub struct UndoDelete {
 
 #[async_trait::async_trait]
 impl InCommunity for UndoDelete {
+  #[tracing::instrument(skip_all)]
   async fn community(&self, context: &Data<LemmyContext>) -> Result<ApubCommunity, LemmyError> {
     let community = self.object.community(context).await?;
     if let Some(audience) = &self.audience {

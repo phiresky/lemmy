@@ -53,6 +53,7 @@ pub struct UndoLockPage {
 
 #[async_trait::async_trait]
 impl InCommunity for LockPage {
+  #[tracing::instrument(skip_all)]
   async fn community(&self, context: &Data<LemmyContext>) -> Result<ApubCommunity, LemmyError> {
     let post = self.object.dereference(context).await?;
     let community = Community::read(context.pool(), post.community_id).await?;
@@ -65,6 +66,7 @@ impl InCommunity for LockPage {
 
 #[async_trait::async_trait]
 impl InCommunity for UndoLockPage {
+  #[tracing::instrument(skip_all)]
   async fn community(&self, context: &Data<LemmyContext>) -> Result<ApubCommunity, LemmyError> {
     let community = self.object.community(context).await?;
     if let Some(audience) = &self.audience {

@@ -44,6 +44,7 @@ pub struct Delete {
 
 #[async_trait::async_trait]
 impl InCommunity for Delete {
+  #[tracing::instrument(skip_all)]
   async fn community(&self, context: &Data<LemmyContext>) -> Result<ApubCommunity, LemmyError> {
     let community_id = match DeletableObjects::read_from_db(self.object.id(), context).await? {
       DeletableObjects::Community(c) => c.id,

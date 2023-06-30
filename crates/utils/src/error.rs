@@ -1,6 +1,6 @@
 use std::{
   fmt,
-  fmt::{Debug, Display},
+  fmt::{Debug, Display}, any::Any,
 };
 use tracing_error::SpanTrace;
 
@@ -67,6 +67,7 @@ where
   T: Into<anyhow::Error>,
 {
   fn from(t: T) -> Self {
+    
     LemmyError {
       message: None,
       inner: t.into(),
@@ -110,12 +111,55 @@ impl actix_web::error::ResponseError for LemmyError {
   fn error_response(&self) -> actix_web::HttpResponse {
     if let Some(message) = &self.message {
       actix_web::HttpResponse::build(self.status_code()).json(ApiError {
-        error: message.into(),
+        error: format!("innerr: {:?}", self.inner),
       })
     } else {
       actix_web::HttpResponse::build(self.status_code())
         .content_type("text/plain")
-        .body(self.inner.to_string())
+        .body(format!("inen: {:?}", self.inner.to_string()))
     }
+  }
+}
+
+/// this has the same function as anyhow::Context except for LemmyErrors (keeping the spantrace and message)
+pub trait LemmyErrContext<T> {
+  fn context<C>(self, context: C) -> LemmyResult<T>
+  where
+    C: Display + Send + Sync + 'static;
+
+  fn with_context<C, F>(self, f: F) -> LemmyResult<T>
+  where
+    C: Display + Send + Sync + 'static,
+    F: FnOnce() -> C;
+}
+/*impl<T, R> LemmyErrContext<R> for T where T: Into<LemmyError> {
+
+}*/
+impl<T> LemmyErrContext<T> for Result<T, LemmyError>
+{
+  fn context<C>(self, context: C) -> LemmyResult<T>
+  where
+    C: Display + Send + Sync + 'static,
+  {
+    self.map_err(|e| {
+      LemmyError {
+        inner: e.inner.context(context),
+        context: e.context,
+        message: e.message
+      }
+    })
+  }
+
+  fn with_context<C, F>(self, f: F) -> LemmyResult<T>
+  where
+    C: Display + Send + Sync + 'static,
+    F: FnOnce() -> C,
+  {
+    self.map_err(|e| {
+      LemmyError {
+        inner: e.inner.context(f()),
+        ..e
+      }
+    })
   }
 }

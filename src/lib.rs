@@ -129,6 +129,11 @@ pub async fn start_lemmy_server() -> Result<(), LemmyError> {
     .worker_count(settings.worker_count)
     .retry_count(settings.retry_count)
     .debug(cfg!(debug_assertions))
+    .allow_http_urls(
+      std::env::var("LEMMY_ALLOW_HTTP")
+        .map(|s| !s.is_empty())
+        .unwrap_or(cfg!(debug_assertions)),
+    )
     .http_signature_compat(true)
     .url_verifier(Box::new(VerifyUrlData(context.pool().clone())))
     .build()
