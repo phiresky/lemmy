@@ -45,7 +45,7 @@ pub(crate) async fn search_query_to_object_id(
 }
 
 /// The types of ActivityPub objects that can be fetched directly by searching for their ID.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum SearchableObjects {
   Person(ApubPerson),
   Community(ApubCommunity),

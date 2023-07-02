@@ -47,6 +47,9 @@ struct Options {
   /// the root directory of the reddit dump. this directory should contain the files `comments/RC_2022-12.zst` and `submissions/RS_2022-12.zst`
   #[arg(long)]
   input_dir: String,
+  /// how many outgoing federation workers to use
+  #[arg(default_value_t = 100, long)]
+  federation_workers: usize,
   /// when this number of events have been sent, stop
   #[arg(default_value_t = 10000, long)]
   limit: i64,
@@ -56,7 +59,16 @@ struct Options {
   /// where to output the info json
   #[arg(long)]
   output_json: String,
+  /// name of this run
+  #[arg(long)]
+  runname: String,
+  /// how many comments a post should get on average. If none, don't adjust ratio. this parameter is needed for realism
+  /// because many comments are for older posts that don't exist in the stream
+  /// 2022-12 has 238862690 / 35865148 = 6.66
+  #[arg(long, default_value = "6.66")]
+  comment_to_post_ratio: Option<f64>,
 }
+//
 #[derive(Debug, Deserialize, Clone)]
 struct Submission {
   url: String, // "https://i.redd.it/t0zqz3vuw43a1.jpg",
@@ -658,7 +670,7 @@ pub async fn go() -> Result<()> {
     .debug(false)
     .allow_http_urls(true)
     .app_data(())
-    .worker_count(100)
+    .worker_count(opt.federation_workers)
     .build()
     .await?;
   let server = HttpServer::new(|| {
@@ -796,7 +808,6 @@ struct DbStat {
   top_queries_by_mean_time: serde_json::Value,
   #[diesel(sql_type=diesel::sql_types::Json)]
   top_queries_by_total_time: serde_json::Value,
-
 }
 
 #[derive(Serialize)]

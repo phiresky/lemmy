@@ -26,6 +26,9 @@ url = { workspace = true }
 actix-web = { workspace = true }
 anyhow = { workspace = true }
 reqwest-middleware = { workspace = true }
+reqwest = { workspace = true }
+activitypub_federation = { workspace = true }
+tracing-subscriber = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 futures = { workspace = true }

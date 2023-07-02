@@ -32,4 +32,5 @@ dev_pgdata/
 *.PGSQL.*
 
 # log files
-log
+/log
+/runs
