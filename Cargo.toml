@@ -142,3 +142,4 @@ futures-util = { workspace = true }
 tokio-postgres = { workspace = true }
 tokio-postgres-rustls = { workspace = true }
 chrono = { workspace = true }
+atty = "0.2.14"
