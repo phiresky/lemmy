@@ -20,7 +20,7 @@ use lemmy_db_schema::{
   source::{community::Community, post::Post},
   traits::Crud,
 };
-use lemmy_utils::error::{LemmyErrContext, LemmyError};
+use lemmy_utils::error::{LemmyError};
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 use std::ops::Deref;
@@ -59,18 +59,12 @@ impl Note {
     context: &Data<LemmyContext>,
   ) -> Result<(ApubPost, Option<ApubComment>), LemmyError> {
     // Fetch parent comment chain in a box, otherwise it can cause a stack overflow.
-    let parent = Box::pin(
-      self
-        .in_reply_to
-        .dereference(context)
-        .await
-        .context("finding parent comment")?,
-    );
+    let parent = Box::pin(self.in_reply_to.dereference(context).await?);
     match parent.deref() {
       PostOrComment::Post(p) => Ok((p.clone(), None)),
       PostOrComment::Comment(c) => {
         let post_id = c.post_id;
-        let post = Post::read(context.pool(), post_id).await.map_err(LemmyError::from).context("Post::read")?;
+        let post = Post::read(context.pool(), post_id).await?;
         Ok((post.into(), Some(c.clone())))
       }
     }

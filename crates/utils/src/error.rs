@@ -1,6 +1,7 @@
 use std::{
   fmt,
-  fmt::{Debug, Display}, any::Any,
+  fmt::{Debug, Display},
+  sync::Arc,
 };
 use tracing_error::SpanTrace;
 
@@ -11,16 +12,17 @@ struct ApiError {
 
 pub type LemmyResult<T> = Result<T, LemmyError>;
 
+#[derive(Clone)]
 pub struct LemmyError {
   pub message: Option<String>,
-  pub inner: anyhow::Error,
+  pub inner: Arc<anyhow::Error>,
   pub context: SpanTrace,
 }
 
 impl LemmyError {
   /// Create LemmyError from a message, including stack trace
   pub fn from_message(message: &str) -> Self {
-    let inner = anyhow::anyhow!("{}", message);
+    let inner = Arc::new(anyhow::anyhow!("{}", message));
     LemmyError {
       message: Some(message.into()),
       inner,
@@ -35,7 +37,7 @@ impl LemmyError {
   {
     LemmyError {
       message: Some(message.into()),
-      inner: error.into(),
+      inner: Arc::new(error.into()),
       context: SpanTrace::capture(),
     }
   }
@@ -67,10 +69,10 @@ where
   T: Into<anyhow::Error>,
 {
   fn from(t: T) -> Self {
-    
+
     LemmyError {
       message: None,
-      inner: t.into(),
+      inner: Arc::new(t.into()),
       context: SpanTrace::capture(),
     }
   }
@@ -111,7 +113,7 @@ impl actix_web::error::ResponseError for LemmyError {
   fn error_response(&self) -> actix_web::HttpResponse {
     if let Some(message) = &self.message {
       actix_web::HttpResponse::build(self.status_code()).json(ApiError {
-        error: format!("innerr: {:?}", self.inner),
+        error: message.clone(),
       })
     } else {
       actix_web::HttpResponse::build(self.status_code())
@@ -135,19 +137,12 @@ pub trait LemmyErrContext<T> {
 /*impl<T, R> LemmyErrContext<R> for T where T: Into<LemmyError> {
 
 }*/
-impl<T> LemmyErrContext<T> for Result<T, LemmyError>
-{
+impl<T> LemmyErrContext<T> for Result<T, LemmyError> {
   fn context<C>(self, context: C) -> LemmyResult<T>
   where
     C: Display + Send + Sync + 'static,
   {
-    self.map_err(|e| {
-      LemmyError {
-        inner: e.inner.context(context),
-        context: e.context,
-        message: e.message
-      }
-    })
+    self.with_context(|| context)
   }
 
   fn with_context<C, F>(self, f: F) -> LemmyResult<T>
@@ -155,11 +150,46 @@ impl<T> LemmyErrContext<T> for Result<T, LemmyError>
     C: Display + Send + Sync + 'static,
     F: FnOnce() -> C,
   {
-    self.map_err(|e| {
-      LemmyError {
-        inner: e.inner.context(f()),
-        ..e
-      }
+    // basically just apply the context to the inner anyhow error
+    // but since it's an arc, we can only do that if we're the sole owner
+    // if the error has been cloned (e.g. for cache storage), we convert it to string
+    self.map_err(|e| LemmyError {
+      inner: match Arc::<anyhow::Error>::try_unwrap(e.inner) {
+        Ok(a) => Arc::new(a.context(f())),
+        Err(err) => Arc::new(anyhow::anyhow!("[copied] {:?}", err).context(f())),
+      },
+      context: e.context,
+      message: e.message,
     })
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{LemmyErrContext, LemmyError};
+
+  #[test]
+  fn test_error_context() -> Result<(), ()> {
+    let res: Result<usize, _> = anyhow::Context::context(((-1).try_into()), "context 1");
+    let res: Result<usize, LemmyError> = res.map_err(|e| e.into());
+    let res: Result<usize, LemmyError> = res.context("context 2");
+    let _res_clone = res.clone(); // simulate cloned error
+    let res: Result<usize, LemmyError> = res.map_err(|e| e.into());
+    let res: Result<usize, LemmyError> = res.context("context 3");
+    let res: Result<usize, LemmyError> = res.map_err(|e| e.into());
+    let err = format!("{}", res.unwrap_err());
+    assert_eq!(
+      "context 3
+
+Caused by:
+    [copied] context 2
+    
+    Caused by:
+        0: context 1
+        1: out of range integral type conversion attempted
+",
+      err
+    );
+    Ok(())
   }
 }
