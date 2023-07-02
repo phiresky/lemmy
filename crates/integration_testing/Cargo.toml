@@ -12,7 +12,11 @@ anyhow.workspace = true
 async-stream = "0.3.5"
 async-trait = "0.1.68"
 clap = { version = "4.3.8", features = ["derive"] }
+diesel.workspace = true
+diesel-async = { workspace = true, features = ["postgres"] }
 futures-core = "0.3.28"
+lemmy_db_schema = { workspace = true, features = ["lemmy_utils", "full"] }
+lemmy_utils.workspace = true
 mime = "0.3.17"
 serde.workspace = true
 serde_json.workspace = true

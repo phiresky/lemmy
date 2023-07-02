@@ -17,16 +17,26 @@ use anyhow::{Context, Result};
 use async_stream::stream;
 use async_trait::async_trait;
 use clap::Parser;
+use diesel::{sql_types::BigInt, FromSqlRow, QueryableByName};
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use futures_core::stream::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Deserializer, Value};
-use std::{collections::HashMap, fmt::Display, path::Path, pin::pin, str::FromStr, time::Instant};
+use std::{
+  collections::HashMap,
+  fmt::Display,
+  fs::File,
+  path::Path,
+  pin::pin,
+  str::FromStr,
+  time::{Duration, Instant},
+};
 use time::format_description::well_known::Rfc3339;
 use tokio_stream::StreamExt;
 use url::Url;
 const SERVER_URL: &str = "http://reddit.com.localhost:5313";
 
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, Serialize)]
 struct Options {
   /// at which host and port we listen
   #[arg(default_value_t=Url::parse("http://reddit.com.localhost:5313").unwrap())]
@@ -43,6 +53,9 @@ struct Options {
   /// skip this number of entries from the input files to make the ratio from comment to post more realistic (because many comments are for older posts we don't have)
   #[arg(default_value_t = 100000, long)]
   skip: i64,
+  /// where to output the info json
+  #[arg(long)]
+  output_json: String,
 }
 #[derive(Debug, Deserialize, Clone)]
 struct Submission {
@@ -245,10 +258,11 @@ async fn import_merged_reddit_dump(
 
   let mut next_comment: Option<Comment> = comment_stream.next().await.transpose()?;
   let mut next_post: Option<Submission> = post_stream.next().await.transpose()?;
+  let comment_delay_seconds = 10.0; // delay all comments by this time to make race condition less likely
   Ok(stream! {
     loop {
       match (&next_comment, &next_post) {
-        (Some(c), p) if p.as_ref().map(|p| c.created_utc < p.created_utc).unwrap_or(true) => {
+        (Some(c), p) if p.as_ref().map(|p| c.created_utc + comment_delay_seconds < p.created_utc).unwrap_or(true) => {
           yield Ok(SubmissionOrComment::Comment(next_comment.expect("must exist")));
           next_comment = comment_stream.next().await.transpose()?;
         }
@@ -631,9 +645,9 @@ pub async fn go() -> Result<()> {
   let mut stream = pin!(
     import_merged_reddit_dump(&Path::new(&opt.input_dir), "2022-12")
       .await?
-      .skip((opt.skip - 1).try_into()?)
+      .skip((opt.skip > 0).then(|| (opt.skip - 1) as usize).unwrap_or(0))
   );
-  {
+  if opt.skip > 0 {
     let now = Instant::now();
     stream.next().await; // ensure one is read to enforce skipping now
     tracing::info!("skipping {} took {:.2?}", opt.skip, now.elapsed());
@@ -705,10 +719,92 @@ pub async fn go() -> Result<()> {
       }
     }
   }
-  tracing::warn!("sending {} took {:.2?}", count, start.elapsed());
+  let unqueue_time = start.elapsed();
+  tracing::warn!("sending {count} took {unqueue_time:.2?}");
   drop(data);
   let start = Instant::now();
-  fed.shutdown(false).await?;
-  tracing::warn!("clearing queue took {:.2?}", start.elapsed());
+  let activityqueue_stats = format!("{:?}", fed.shutdown(false).await?);
+  let clear_time = start.elapsed();
+  tracing::warn!("stats: {activityqueue_stats}");
+  tracing::warn!("clearing queue took {clear_time:.2?}");
+  let db_stats = {
+    use diesel::dsl::sql_query;
+    use lemmy_db_schema::utils::get_database_url;
+    let settings = lemmy_utils::settings::SETTINGS.to_owned();
+
+    // Run the DB migrations
+    let db_url = get_database_url(Some(&settings));
+    // run_migrations(&db_url);
+
+    // Set up the connection pool
+    //let pool = build_db_pool(&settings).await?;
+    let mut conn = AsyncPgConnection::establish(&db_url).await?;
+    sql_query("create extension if not exists pg_stat_statements")
+      .execute(&mut conn)
+      .await?;
+    let st: DbStat = sql_query("select * from
+    (select count(*) as comment_count from comment) a,
+    (select count(*) as post_count from post) b,
+    (select count(*) as activity_count from activity) d,
+    (select count(*) as statement_count, sum(calls)::bigint as statement_call_count, 
+        sum(total_plan_time)/1000 as total_plan_time_s, sum(total_exec_time)/1000 as total_exec_time_s from pg_stat_statements where query != 'SELECT $1') c,
+    (select json_agg(row_to_json(top_queries)) as top_queries_by_call_count
+      from (select query, calls, total_exec_time, mean_exec_time, rows  from pg_stat_statements order by calls desc limit 20) top_queries) t,
+    (select json_agg(row_to_json(top_queries)) as top_queries_by_mean_time
+      from (select query, calls, total_exec_time, mean_exec_time, rows  from pg_stat_statements order by mean_exec_time desc limit 20) top_queries) t2,
+    (select json_agg(row_to_json(top_queries)) as top_queries_by_total_time
+      from (select query, calls, total_exec_time, mean_exec_time, rows  from pg_stat_statements order by total_exec_time desc limit 20) top_queries) t3
+      
+      ;
+    ").get_result(&mut conn).await?;
+    tracing::warn!("db: {st:?}");
+    st
+  };
+  serde_json::to_writer_pretty(
+    File::create(&opt.output_json)?,
+    &Output {
+      unqueue_time_s: unqueue_time.as_secs_f64(),
+      total_time_s: (unqueue_time + clear_time).as_secs_f64(),
+      clear_time_s: clear_time.as_secs_f64(),
+      activityqueue_stats,
+      db_stats,
+      config: opt,
+    },
+  )?;
   Ok(())
+}
+
+#[derive(Serialize, Debug, QueryableByName, PartialEq)]
+struct DbStat {
+  #[diesel(sql_type=BigInt)]
+  comment_count: i64,
+  #[diesel(sql_type=BigInt)]
+  post_count: i64,
+  #[diesel(sql_type=BigInt)]
+  activity_count: i64,
+  #[diesel(sql_type=BigInt)]
+  statement_count: i64,
+  #[diesel(sql_type=BigInt)]
+  statement_call_count: i64,
+  #[diesel(sql_type=diesel::sql_types::Double)]
+  total_plan_time_s: f64,
+  #[diesel(sql_type=diesel::sql_types::Double)]
+  total_exec_time_s: f64,
+  #[diesel(sql_type=diesel::sql_types::Json)]
+  top_queries_by_call_count: serde_json::Value,
+  #[diesel(sql_type=diesel::sql_types::Json)]
+  top_queries_by_mean_time: serde_json::Value,
+  #[diesel(sql_type=diesel::sql_types::Json)]
+  top_queries_by_total_time: serde_json::Value,
+
+}
+
+#[derive(Serialize)]
+struct Output {
+  total_time_s: f64,
+  unqueue_time_s: f64,
+  clear_time_s: f64,
+  activityqueue_stats: String,
+  db_stats: DbStat,
+  config: Options,
 }
