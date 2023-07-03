@@ -100,11 +100,12 @@ pub(crate) struct LocalSiteData {
 pub(crate) async fn fetch_local_site_data(
   pool: &DbPool,
 ) -> Result<LocalSiteData, diesel::result::Error> {
+  // let now = std::time::Instant::now();
   // LocalSite may be missing
   let local_site = LocalSite::read(pool).await.ok();
   let allowed_instances = Instance::allowlist(pool).await?;
   let blocked_instances = Instance::blocklist(pool).await?;
-
+  // tracing::warn!("fetch_local_site_data {:.2?}", now.elapsed());
   Ok(LocalSiteData {
     local_site,
     allowed_instances,

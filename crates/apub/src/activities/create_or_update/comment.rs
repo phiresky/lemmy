@@ -40,7 +40,7 @@ use lemmy_db_schema::{
   },
   traits::{Crud, Likeable},
 };
-use lemmy_utils::{error::LemmyError, utils::mention::scrape_text_for_mentions};
+use lemmy_utils::{error::{LemmyError, LemmyErrContext}, utils::mention::scrape_text_for_mentions};
 use url::Url;
 
 #[async_trait::async_trait]
@@ -153,7 +153,12 @@ impl ActivityHandler for CreateOrUpdateNote {
   #[tracing::instrument(skip_all)]
   async fn verify(&self, context: &Data<Self::DataType>) -> Result<(), LemmyError> {
     verify_is_public(&self.to, &self.cc)?;
-    let post = self.object.get_parents(context).await?.0;
+    let post = self
+      .object
+      .get_parents(context)
+      .await
+      .with_context(|| format!("getting parents of {}", self.object.id))?
+      .0;
     let community = self.community(context).await?;
 
     verify_person_in_community(&self.actor, &community, context).await?;

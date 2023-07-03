@@ -14,10 +14,14 @@ async-trait = "0.1.68"
 clap = { version = "4.3.8", features = ["derive"] }
 diesel.workspace = true
 diesel-async = { workspace = true, features = ["postgres"] }
+futures.workspace = true
 futures-core = "0.3.28"
+indexmap = "2.0.0"
 lemmy_db_schema = { workspace = true, features = ["lemmy_utils", "full"] }
 lemmy_utils.workspace = true
 mime = "0.3.17"
+pin-project = "1.1.2"
+rand = "0.8.5"
 serde.workspace = true
 serde_json.workspace = true
 time = { version = "0.3.22", features = ["serde"] }

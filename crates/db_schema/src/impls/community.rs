@@ -281,6 +281,7 @@ impl Followable for CommunityFollower {
 #[async_trait]
 impl ApubActor for Community {
   async fn read_from_apub_id(pool: &DbPool, object_id: &DbUrl) -> Result<Option<Self>, Error> {
+    // tracing::warn!("{}: {}", "community.read_from_apub_id", tracing_error::SpanTrace::capture());
     let conn = &mut get_conn(pool).await?;
     Ok(
       community::table
