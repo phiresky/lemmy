@@ -10,7 +10,7 @@ use crate::{
     CommentSavedForm,
     CommentUpdateForm,
   },
-  traits::{Crud, Likeable, Saveable},
+  traits::{UncachedCrud, Likeable, Saveable},
   utils::{get_conn, naive_now, DbPool, DELETED_REPLACEMENT_TEXT},
 };
 use diesel::{
@@ -149,26 +149,26 @@ where ca.comment_id = c.id"
 }
 
 #[async_trait]
-impl Crud for Comment {
+impl UncachedCrud for Comment {
   type InsertForm = CommentInsertForm;
   type UpdateForm = CommentUpdateForm;
   type IdType = CommentId;
-  async fn read(pool: &DbPool, comment_id: CommentId) -> Result<Self, Error> {
+  async fn read_uncached(pool: &DbPool, comment_id: CommentId) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     comment.find(comment_id).first::<Self>(conn).await
   }
 
-  async fn delete(pool: &DbPool, comment_id: CommentId) -> Result<usize, Error> {
+  async fn delete_uncached(pool: &DbPool, comment_id: CommentId) -> Result<usize, Error> {
     let conn = &mut get_conn(pool).await?;
     diesel::delete(comment.find(comment_id)).execute(conn).await
   }
 
   /// This is unimplemented, use [[Comment::create]]
-  async fn create(_pool: &DbPool, _comment_form: &Self::InsertForm) -> Result<Self, Error> {
+  async fn create_uncached(_pool: &DbPool, _comment_form: &Self::InsertForm) -> Result<Self, Error> {
     unimplemented!();
   }
 
-  async fn update(
+  async fn update_uncached(
     pool: &DbPool,
     comment_id: CommentId,
     comment_form: &Self::UpdateForm,
@@ -259,7 +259,7 @@ mod tests {
       person::{Person, PersonInsertForm},
       post::{Post, PostInsertForm},
     },
-    traits::{Crud, Likeable, Saveable},
+    traits::{UncachedCrud, Likeable, Saveable},
     utils::build_db_pool_for_tests,
   };
   use diesel_ltree::Ltree;
@@ -280,7 +280,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_person = Person::create(pool, &new_person).await.unwrap();
+    let inserted_person = Person::create_uncached(pool, &new_person).await.unwrap();
 
     let new_community = CommunityInsertForm::builder()
       .name("test community".to_string())
@@ -289,7 +289,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_community = Community::create(pool, &new_community).await.unwrap();
+    let inserted_community = Community::create_uncached(pool, &new_community).await.unwrap();
 
     let new_post = PostInsertForm::builder()
       .name("A test post".into())
@@ -297,7 +297,7 @@ mod tests {
       .community_id(inserted_community.id)
       .build();
 
-    let inserted_post = Post::create(pool, &new_post).await.unwrap();
+    let inserted_post = Post::create_uncached(pool, &new_post).await.unwrap();
 
     let comment_form = CommentInsertForm::builder()
       .content("A test comment".into())
@@ -372,26 +372,26 @@ mod tests {
       .content(Some("A test comment".into()))
       .build();
 
-    let updated_comment = Comment::update(pool, inserted_comment.id, &comment_update_form)
+    let updated_comment = Comment::update_uncached(pool, inserted_comment.id, &comment_update_form)
       .await
       .unwrap();
 
-    let read_comment = Comment::read(pool, inserted_comment.id).await.unwrap();
+    let read_comment = Comment::read_uncached(pool, inserted_comment.id).await.unwrap();
     let like_removed = CommentLike::remove(pool, inserted_person.id, inserted_comment.id)
       .await
       .unwrap();
     let saved_removed = CommentSaved::unsave(pool, &comment_saved_form)
       .await
       .unwrap();
-    let num_deleted = Comment::delete(pool, inserted_comment.id).await.unwrap();
-    Comment::delete(pool, inserted_child_comment.id)
+    let num_deleted = Comment::delete_uncached(pool, inserted_comment.id).await.unwrap();
+    Comment::delete_uncached(pool, inserted_child_comment.id)
       .await
       .unwrap();
-    Post::delete(pool, inserted_post.id).await.unwrap();
-    Community::delete(pool, inserted_community.id)
+    Post::delete_uncached(pool, inserted_post.id).await.unwrap();
+    Community::delete_uncached(pool, inserted_community.id)
       .await
       .unwrap();
-    Person::delete(pool, inserted_person.id).await.unwrap();
+    Person::delete_uncached(pool, inserted_person.id).await.unwrap();
     Instance::delete(pool, inserted_instance.id).await.unwrap();
 
     assert_eq!(expected_comment, read_comment);

@@ -26,7 +26,7 @@ use crate::{
     PostSavedForm,
     PostUpdateForm,
   },
-  traits::{Crud, Likeable, Readable, Saveable},
+  traits::{UncachedCrud, Likeable, Readable, Saveable},
   utils::{get_conn, naive_now, DbPool, DELETED_REPLACEMENT_TEXT, FETCH_LIMIT_MAX},
 };
 use ::url::Url;
@@ -34,21 +34,21 @@ use diesel::{dsl::insert_into, result::Error, ExpressionMethods, QueryDsl, TextE
 use diesel_async::RunQueryDsl;
 
 #[async_trait]
-impl Crud for Post {
+impl UncachedCrud for Post {
   type InsertForm = PostInsertForm;
   type UpdateForm = PostUpdateForm;
   type IdType = PostId;
-  async fn read(pool: &DbPool, post_id: PostId) -> Result<Self, Error> {
+  async fn read_uncached(pool: &DbPool, post_id: PostId) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     post.find(post_id).first::<Self>(conn).await
   }
 
-  async fn delete(pool: &DbPool, post_id: PostId) -> Result<usize, Error> {
+  async fn delete_uncached(pool: &DbPool, post_id: PostId) -> Result<usize, Error> {
     let conn = &mut get_conn(pool).await?;
     diesel::delete(post.find(post_id)).execute(conn).await
   }
 
-  async fn create(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
+  async fn create_uncached(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     insert_into(post)
       .values(form)
@@ -59,7 +59,7 @@ impl Crud for Post {
       .await
   }
 
-  async fn update(
+  async fn update_uncached(
     pool: &DbPool,
     post_id: PostId,
     new_post: &Self::UpdateForm,
@@ -333,7 +333,7 @@ mod tests {
         PostUpdateForm,
       },
     },
-    traits::{Crud, Likeable, Readable, Saveable},
+    traits::{UncachedCrud, Likeable, Readable, Saveable},
     utils::build_db_pool_for_tests,
   };
   use serial_test::serial;
@@ -353,7 +353,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_person = Person::create(pool, &new_person).await.unwrap();
+    let inserted_person = Person::create_uncached(pool, &new_person).await.unwrap();
 
     let new_community = CommunityInsertForm::builder()
       .name("test community_3".to_string())
@@ -362,7 +362,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_community = Community::create(pool, &new_community).await.unwrap();
+    let inserted_community = Community::create_uncached(pool, &new_community).await.unwrap();
 
     let new_post = PostInsertForm::builder()
       .name("A test post".into())
@@ -370,7 +370,7 @@ mod tests {
       .community_id(inserted_community.id)
       .build();
 
-    let inserted_post = Post::create(pool, &new_post).await.unwrap();
+    let inserted_post = Post::create_uncached(pool, &new_post).await.unwrap();
 
     let expected_post = Post {
       id: inserted_post.id,
@@ -443,12 +443,12 @@ mod tests {
       published: inserted_post_read.published,
     };
 
-    let read_post = Post::read(pool, inserted_post.id).await.unwrap();
+    let read_post = Post::read_uncached(pool, inserted_post.id).await.unwrap();
 
     let new_post_update = PostUpdateForm::builder()
       .name(Some("A test post".into()))
       .build();
-    let updated_post = Post::update(pool, inserted_post.id, &new_post_update)
+    let updated_post = Post::update_uncached(pool, inserted_post.id, &new_post_update)
       .await
       .unwrap();
 
@@ -459,11 +459,11 @@ mod tests {
     let read_removed = PostRead::mark_as_unread(pool, &post_read_form)
       .await
       .unwrap();
-    let num_deleted = Post::delete(pool, inserted_post.id).await.unwrap();
-    Community::delete(pool, inserted_community.id)
+    let num_deleted = Post::delete_uncached(pool, inserted_post.id).await.unwrap();
+    Community::delete_uncached(pool, inserted_community.id)
       .await
       .unwrap();
-    Person::delete(pool, inserted_person.id).await.unwrap();
+    Person::delete_uncached(pool, inserted_person.id).await.unwrap();
     Instance::delete(pool, inserted_instance.id).await.unwrap();
 
     assert_eq!(expected_post, read_post);

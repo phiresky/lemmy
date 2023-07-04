@@ -3,23 +3,23 @@ use crate::{
   utils::DbPool,
 };
 use diesel::result::Error;
-
+pub use crate::caching::CachingCrud as Crud;
 #[async_trait]
-pub trait Crud {
+pub trait UncachedCrud {
   type InsertForm;
   type UpdateForm;
-  type IdType;
-  async fn create(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error>
+  type IdType: Send + Sync + Clone + Eq + std::hash::Hash + 'static;
+  async fn create_uncached(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error>
   where
     Self: Sized;
-  async fn read(pool: &DbPool, id: Self::IdType) -> Result<Self, Error>
+  async fn read_uncached(pool: &DbPool, id: Self::IdType) -> Result<Self, Error>
   where
     Self: Sized;
   /// when you want to null out a column, you have to send Some(None)), since sending None means you just don't want to update that column.
-  async fn update(pool: &DbPool, id: Self::IdType, form: &Self::UpdateForm) -> Result<Self, Error>
+  async fn update_uncached(pool: &DbPool, id: Self::IdType, form: &Self::UpdateForm) -> Result<Self, Error>
   where
     Self: Sized;
-  async fn delete(_pool: &DbPool, _id: Self::IdType) -> Result<usize, Error>
+  async fn delete_uncached(_pool: &DbPool, _id: Self::IdType) -> Result<usize, Error>
   where
     Self: Sized,
     Self::IdType: Send,

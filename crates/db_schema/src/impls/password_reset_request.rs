@@ -7,7 +7,7 @@ use crate::{
     token_encrypted,
   },
   source::password_reset_request::{PasswordResetRequest, PasswordResetRequestForm},
-  traits::Crud,
+  traits::UncachedCrud,
   utils::{get_conn, DbPool},
 };
 use diesel::{
@@ -20,25 +20,25 @@ use diesel_async::RunQueryDsl;
 use sha2::{Digest, Sha256};
 
 #[async_trait]
-impl Crud for PasswordResetRequest {
+impl UncachedCrud for PasswordResetRequest {
   type InsertForm = PasswordResetRequestForm;
   type UpdateForm = PasswordResetRequestForm;
   type IdType = i32;
-  async fn read(pool: &DbPool, password_reset_request_id: i32) -> Result<Self, Error> {
+  async fn read_uncached(pool: &DbPool, password_reset_request_id: i32) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     password_reset_request
       .find(password_reset_request_id)
       .first::<Self>(conn)
       .await
   }
-  async fn create(pool: &DbPool, form: &PasswordResetRequestForm) -> Result<Self, Error> {
+  async fn create_uncached(pool: &DbPool, form: &PasswordResetRequestForm) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     insert_into(password_reset_request)
       .values(form)
       .get_result::<Self>(conn)
       .await
   }
-  async fn update(
+  async fn update_uncached(
     pool: &DbPool,
     password_reset_request_id: i32,
     form: &PasswordResetRequestForm,
@@ -66,7 +66,7 @@ impl PasswordResetRequest {
       token_encrypted: token_hash,
     };
 
-    Self::create(pool, &form).await
+    Self::create_uncached(pool, &form).await
   }
   pub async fn read_from_token(pool: &DbPool, token: &str) -> Result<PasswordResetRequest, Error> {
     let conn = &mut get_conn(pool).await?;
@@ -111,7 +111,7 @@ mod tests {
       password_reset_request::PasswordResetRequest,
       person::{Person, PersonInsertForm},
     },
-    traits::Crud,
+    traits::UncachedCrud,
     utils::build_db_pool_for_tests,
   };
   use serial_test::serial;
@@ -131,14 +131,14 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_person = Person::create(pool, &new_person).await.unwrap();
+    let inserted_person = Person::create_uncached(pool, &new_person).await.unwrap();
 
     let new_local_user = LocalUserInsertForm::builder()
       .person_id(inserted_person.id)
       .password_encrypted("pass".to_string())
       .build();
 
-    let inserted_local_user = LocalUser::create(pool, &new_local_user).await.unwrap();
+    let inserted_local_user = LocalUser::create_uncached(pool, &new_local_user).await.unwrap();
 
     let token = "nope";
     let token_encrypted_ = "ca3704aa0b06f5954c79ee837faa152d84d6b2d42838f0637a15eda8337dbdce";
@@ -158,7 +158,7 @@ mod tests {
     let read_password_reset_request = PasswordResetRequest::read_from_token(pool, token)
       .await
       .unwrap();
-    let num_deleted = Person::delete(pool, inserted_person.id).await.unwrap();
+    let num_deleted = Person::delete_uncached(pool, inserted_person.id).await.unwrap();
     Instance::delete(pool, inserted_instance.id).await.unwrap();
 
     assert_eq!(expected_password_reset_request, read_password_reset_request);

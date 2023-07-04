@@ -12,7 +12,7 @@ use crate::{
     actor_language::{LocalUserLanguage, SiteLanguage},
     local_user::{LocalUser, LocalUserInsertForm, LocalUserUpdateForm},
   },
-  traits::Crud,
+  traits::UncachedCrud,
   utils::{get_conn, naive_now, DbPool},
 };
 use bcrypt::{hash, DEFAULT_COST};
@@ -65,21 +65,21 @@ impl LocalUser {
 }
 
 #[async_trait]
-impl Crud for LocalUser {
+impl UncachedCrud for LocalUser {
   type InsertForm = LocalUserInsertForm;
   type UpdateForm = LocalUserUpdateForm;
   type IdType = LocalUserId;
-  async fn read(pool: &DbPool, local_user_id: LocalUserId) -> Result<Self, Error> {
+  async fn read_uncached(pool: &DbPool, local_user_id: LocalUserId) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     local_user.find(local_user_id).first::<Self>(conn).await
   }
-  async fn delete(pool: &DbPool, local_user_id: LocalUserId) -> Result<usize, Error> {
+  async fn delete_uncached(pool: &DbPool, local_user_id: LocalUserId) -> Result<usize, Error> {
     let conn = &mut get_conn(pool).await?;
     diesel::delete(local_user.find(local_user_id))
       .execute(conn)
       .await
   }
-  async fn create(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
+  async fn create_uncached(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     let mut form_with_encrypted_password = form.clone();
     let password_hash =
@@ -103,7 +103,7 @@ impl Crud for LocalUser {
 
     Ok(local_user_)
   }
-  async fn update(
+  async fn update_uncached(
     pool: &DbPool,
     local_user_id: LocalUserId,
     form: &Self::UpdateForm,

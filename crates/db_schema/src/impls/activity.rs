@@ -2,23 +2,23 @@ use crate::{
   newtypes::DbUrl,
   schema::activity::dsl::{activity, ap_id},
   source::activity::{Activity, ActivityInsertForm, ActivityUpdateForm},
-  traits::Crud,
+  traits::UncachedCrud,
   utils::{get_conn, DbPool},
 };
 use diesel::{dsl::insert_into, result::Error, ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
 
 #[async_trait]
-impl Crud for Activity {
+impl UncachedCrud for Activity {
   type InsertForm = ActivityInsertForm;
   type UpdateForm = ActivityUpdateForm;
   type IdType = i32;
-  async fn read(pool: &DbPool, activity_id: i32) -> Result<Self, Error> {
+  async fn read_uncached(pool: &DbPool, activity_id: i32) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     activity.find(activity_id).first::<Self>(conn).await
   }
 
-  async fn create(pool: &DbPool, new_activity: &Self::InsertForm) -> Result<Self, Error> {
+  async fn create_uncached(pool: &DbPool, new_activity: &Self::InsertForm) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     insert_into(activity)
       .values(new_activity)
@@ -26,7 +26,7 @@ impl Crud for Activity {
       .await
   }
 
-  async fn update(
+  async fn update_uncached(
     pool: &DbPool,
     activity_id: i32,
     new_activity: &Self::UpdateForm,
@@ -37,7 +37,7 @@ impl Crud for Activity {
       .get_result::<Self>(conn)
       .await
   }
-  async fn delete(pool: &DbPool, activity_id: i32) -> Result<usize, Error> {
+  async fn delete_uncached(pool: &DbPool, activity_id: i32) -> Result<usize, Error> {
     let conn = &mut get_conn(pool).await?;
     diesel::delete(activity.find(activity_id))
       .execute(conn)
@@ -86,7 +86,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_creator = Person::create(pool, &creator_form).await.unwrap();
+    let inserted_creator = Person::create_uncached(pool, &creator_form).await.unwrap();
 
     let ap_id_: DbUrl = Url::parse(
       "https://enterprise.lemmy.ml/activities/delete/f1b5d57c-80f8-4e03-a615-688d552e946c",
@@ -115,7 +115,7 @@ mod tests {
       updated: None,
     };
 
-    let inserted_activity = Activity::create(pool, &activity_form).await.unwrap();
+    let inserted_activity = Activity::create_uncached(pool, &activity_form).await.unwrap();
 
     let expected_activity = Activity {
       ap_id: ap_id_.clone(),
@@ -127,10 +127,10 @@ mod tests {
       updated: None,
     };
 
-    let read_activity = Activity::read(pool, inserted_activity.id).await.unwrap();
+    let read_activity = Activity::read_uncached(pool, inserted_activity.id).await.unwrap();
     let read_activity_by_apub_id = Activity::read_from_apub_id(pool, &ap_id_).await.unwrap();
-    Person::delete(pool, inserted_creator.id).await.unwrap();
-    Activity::delete(pool, inserted_activity.id).await.unwrap();
+    Person::delete_uncached(pool, inserted_creator.id).await.unwrap();
+    Activity::delete_uncached(pool, inserted_activity.id).await.unwrap();
 
     assert_eq!(expected_activity, read_activity);
     assert_eq!(expected_activity, read_activity_by_apub_id);

@@ -414,7 +414,7 @@ mod tests {
       person::{Person, PersonInsertForm},
       site::{Site, SiteInsertForm},
     },
-    traits::Crud,
+    traits::UncachedCrud,
     utils::build_db_pool_for_tests,
   };
   use serial_test::serial;
@@ -457,7 +457,7 @@ mod tests {
       .name("test site".to_string())
       .instance_id(inserted_instance.id)
       .build();
-    let site = Site::create(pool, &site_form).await.unwrap();
+    let site = Site::create_uncached(pool, &site_form).await.unwrap();
 
     // Create a local site, since this is necessary for local languages
     let local_site_form = LocalSiteInsertForm::builder().site_id(site.id).build();
@@ -522,7 +522,7 @@ mod tests {
     // after update, site only has new languages
     assert_eq!(test_langs, site_languages2);
 
-    Site::delete(pool, site.id).await.unwrap();
+    Site::delete_uncached(pool, site.id).await.unwrap();
     Instance::delete(pool, instance.id).await.unwrap();
     LocalSite::delete(pool).await.unwrap();
   }
@@ -543,13 +543,13 @@ mod tests {
       .public_key("pubkey".to_string())
       .instance_id(instance.id)
       .build();
-    let person = Person::create(pool, &person_form).await.unwrap();
+    let person = Person::create_uncached(pool, &person_form).await.unwrap();
     let local_user_form = LocalUserInsertForm::builder()
       .person_id(person.id)
       .password_encrypted("my_pw".to_string())
       .build();
 
-    let local_user = LocalUser::create(pool, &local_user_form).await.unwrap();
+    let local_user = LocalUser::create_uncached(pool, &local_user_form).await.unwrap();
     let local_user_langs1 = LocalUserLanguage::read(pool, local_user.id).await.unwrap();
 
     // new user should be initialized with site languages and undetermined
@@ -566,9 +566,9 @@ mod tests {
     let local_user_langs2 = LocalUserLanguage::read(pool, local_user.id).await.unwrap();
     assert_eq!(3, local_user_langs2.len());
 
-    Person::delete(pool, person.id).await.unwrap();
-    LocalUser::delete(pool, local_user.id).await.unwrap();
-    Site::delete(pool, site.id).await.unwrap();
+    Person::delete_uncached(pool, person.id).await.unwrap();
+    LocalUser::delete_uncached(pool, local_user.id).await.unwrap();
+    Site::delete_uncached(pool, site.id).await.unwrap();
     LocalSite::delete(pool).await.unwrap();
     Instance::delete(pool, instance.id).await.unwrap();
   }
@@ -596,7 +596,7 @@ mod tests {
       .public_key("pubkey".to_string())
       .instance_id(instance.id)
       .build();
-    let community = Community::create(pool, &community_form).await.unwrap();
+    let community = Community::create_uncached(pool, &community_form).await.unwrap();
     let community_langs1 = CommunityLanguage::read(pool, community.id).await.unwrap();
 
     // community is initialized with site languages
@@ -628,8 +628,8 @@ mod tests {
     let community_langs3 = CommunityLanguage::read(pool, community.id).await.unwrap();
     assert_eq!(test_langs2, community_langs3);
 
-    Community::delete(pool, community.id).await.unwrap();
-    Site::delete(pool, site.id).await.unwrap();
+    Community::delete_uncached(pool, community.id).await.unwrap();
+    Site::delete_uncached(pool, site.id).await.unwrap();
     LocalSite::delete(pool).await.unwrap();
     Instance::delete(pool, instance.id).await.unwrap();
   }
@@ -648,7 +648,7 @@ mod tests {
       .public_key("pubkey".to_string())
       .instance_id(instance.id)
       .build();
-    let community = Community::create(pool, &community_form).await.unwrap();
+    let community = Community::create_uncached(pool, &community_form).await.unwrap();
     CommunityLanguage::update(pool, test_langs, community.id)
       .await
       .unwrap();
@@ -658,12 +658,12 @@ mod tests {
       .public_key("pubkey".to_string())
       .instance_id(instance.id)
       .build();
-    let person = Person::create(pool, &person_form).await.unwrap();
+    let person = Person::create_uncached(pool, &person_form).await.unwrap();
     let local_user_form = LocalUserInsertForm::builder()
       .person_id(person.id)
       .password_encrypted("my_pw".to_string())
       .build();
-    let local_user = LocalUser::create(pool, &local_user_form).await.unwrap();
+    let local_user = LocalUser::create_uncached(pool, &local_user_form).await.unwrap();
     LocalUserLanguage::update(pool, test_langs2, local_user.id)
       .await
       .unwrap();
@@ -700,10 +700,10 @@ mod tests {
       .unwrap();
     assert_eq!(Some(ru), def2);
 
-    Person::delete(pool, person.id).await.unwrap();
-    Community::delete(pool, community.id).await.unwrap();
-    LocalUser::delete(pool, local_user.id).await.unwrap();
-    Site::delete(pool, site.id).await.unwrap();
+    Person::delete_uncached(pool, person.id).await.unwrap();
+    Community::delete_uncached(pool, community.id).await.unwrap();
+    LocalUser::delete_uncached(pool, local_user.id).await.unwrap();
+    Site::delete_uncached(pool, site.id).await.unwrap();
     LocalSite::delete(pool).await.unwrap();
     Instance::delete(pool, instance.id).await.unwrap();
   }

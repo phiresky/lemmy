@@ -6,19 +6,19 @@ use crate::{
     RegistrationApplicationInsertForm,
     RegistrationApplicationUpdateForm,
   },
-  traits::Crud,
+  traits::UncachedCrud,
   utils::{get_conn, DbPool},
 };
 use diesel::{insert_into, result::Error, ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
 
 #[async_trait]
-impl Crud for RegistrationApplication {
+impl UncachedCrud for RegistrationApplication {
   type InsertForm = RegistrationApplicationInsertForm;
   type UpdateForm = RegistrationApplicationUpdateForm;
   type IdType = i32;
 
-  async fn create(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
+  async fn create_uncached(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     insert_into(registration_application)
       .values(form)
@@ -26,12 +26,12 @@ impl Crud for RegistrationApplication {
       .await
   }
 
-  async fn read(pool: &DbPool, id_: Self::IdType) -> Result<Self, Error> {
+  async fn read_uncached(pool: &DbPool, id_: Self::IdType) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     registration_application.find(id_).first::<Self>(conn).await
   }
 
-  async fn update(
+  async fn update_uncached(
     pool: &DbPool,
     id_: Self::IdType,
     form: &Self::UpdateForm,
@@ -43,7 +43,7 @@ impl Crud for RegistrationApplication {
       .await
   }
 
-  async fn delete(pool: &DbPool, id_: Self::IdType) -> Result<usize, Error> {
+  async fn delete_uncached(pool: &DbPool, id_: Self::IdType) -> Result<usize, Error> {
     let conn = &mut get_conn(pool).await?;
     diesel::delete(registration_application.find(id_))
       .execute(conn)

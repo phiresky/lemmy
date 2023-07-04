@@ -5,7 +5,7 @@ use crate::{
     actor_language::SiteLanguage,
     site::{Site, SiteInsertForm, SiteUpdateForm},
   },
-  traits::Crud,
+  traits::UncachedCrud,
   utils::{get_conn, DbPool},
 };
 use diesel::{dsl::insert_into, result::Error, ExpressionMethods, QueryDsl};
@@ -13,17 +13,17 @@ use diesel_async::RunQueryDsl;
 use url::Url;
 
 #[async_trait]
-impl Crud for Site {
+impl UncachedCrud for Site {
   type InsertForm = SiteInsertForm;
   type UpdateForm = SiteUpdateForm;
   type IdType = SiteId;
 
   /// Use SiteView::read_local, or Site::read_from_apub_id instead
-  async fn read(_pool: &DbPool, _site_id: SiteId) -> Result<Self, Error> {
+  async fn read_uncached(_pool: &DbPool, _site_id: SiteId) -> Result<Self, Error> {
     unimplemented!()
   }
 
-  async fn create(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
+  async fn create_uncached(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     let is_new_site = match &form.actor_id {
       Some(id_) => Site::read_from_apub_id(pool, id_).await?.is_none(),
@@ -47,7 +47,7 @@ impl Crud for Site {
     Ok(site_)
   }
 
-  async fn update(
+  async fn update_uncached(
     pool: &DbPool,
     site_id: SiteId,
     new_site: &Self::UpdateForm,
@@ -59,7 +59,7 @@ impl Crud for Site {
       .await
   }
 
-  async fn delete(pool: &DbPool, site_id: SiteId) -> Result<usize, Error> {
+  async fn delete_uncached(pool: &DbPool, site_id: SiteId) -> Result<usize, Error> {
     let conn = &mut get_conn(pool).await?;
     diesel::delete(site.find(site_id)).execute(conn).await
   }

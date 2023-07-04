@@ -2,18 +2,18 @@ use crate::{
   newtypes::{CommentId, PersonId, PersonMentionId},
   schema::person_mention::dsl::{comment_id, person_mention, read, recipient_id},
   source::person_mention::{PersonMention, PersonMentionInsertForm, PersonMentionUpdateForm},
-  traits::Crud,
+  traits::UncachedCrud,
   utils::{get_conn, DbPool},
 };
 use diesel::{dsl::insert_into, result::Error, ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
 
 #[async_trait]
-impl Crud for PersonMention {
+impl UncachedCrud for PersonMention {
   type InsertForm = PersonMentionInsertForm;
   type UpdateForm = PersonMentionUpdateForm;
   type IdType = PersonMentionId;
-  async fn read(pool: &DbPool, person_mention_id: PersonMentionId) -> Result<Self, Error> {
+  async fn read_uncached(pool: &DbPool, person_mention_id: PersonMentionId) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     person_mention
       .find(person_mention_id)
@@ -21,7 +21,7 @@ impl Crud for PersonMention {
       .await
   }
 
-  async fn create(pool: &DbPool, person_mention_form: &Self::InsertForm) -> Result<Self, Error> {
+  async fn create_uncached(pool: &DbPool, person_mention_form: &Self::InsertForm) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     // since the return here isnt utilized, we dont need to do an update
     // but get_result doesnt return the existing row here
@@ -34,7 +34,7 @@ impl Crud for PersonMention {
       .await
   }
 
-  async fn update(
+  async fn update_uncached(
     pool: &DbPool,
     person_mention_id: PersonMentionId,
     person_mention_form: &Self::UpdateForm,
@@ -88,7 +88,7 @@ mod tests {
       person_mention::{PersonMention, PersonMentionInsertForm, PersonMentionUpdateForm},
       post::{Post, PostInsertForm},
     },
-    traits::Crud,
+    traits::UncachedCrud,
     utils::build_db_pool_for_tests,
   };
   use serial_test::serial;
@@ -108,7 +108,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_person = Person::create(pool, &new_person).await.unwrap();
+    let inserted_person = Person::create_uncached(pool, &new_person).await.unwrap();
 
     let recipient_form = PersonInsertForm::builder()
       .name("terrylakes recipient".into())
@@ -116,7 +116,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_recipient = Person::create(pool, &recipient_form).await.unwrap();
+    let inserted_recipient = Person::create_uncached(pool, &recipient_form).await.unwrap();
 
     let new_community = CommunityInsertForm::builder()
       .name("test community lake".to_string())
@@ -125,7 +125,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_community = Community::create(pool, &new_community).await.unwrap();
+    let inserted_community = Community::create_uncached(pool, &new_community).await.unwrap();
 
     let new_post = PostInsertForm::builder()
       .name("A test post".into())
@@ -133,7 +133,7 @@ mod tests {
       .community_id(inserted_community.id)
       .build();
 
-    let inserted_post = Post::create(pool, &new_post).await.unwrap();
+    let inserted_post = Post::create_uncached(pool, &new_post).await.unwrap();
 
     let comment_form = CommentInsertForm::builder()
       .content("A test comment".into())
@@ -149,7 +149,7 @@ mod tests {
       read: None,
     };
 
-    let inserted_mention = PersonMention::create(pool, &person_mention_form)
+    let inserted_mention = PersonMention::create_uncached(pool, &person_mention_form)
       .await
       .unwrap();
 
@@ -161,22 +161,22 @@ mod tests {
       published: inserted_mention.published,
     };
 
-    let read_mention = PersonMention::read(pool, inserted_mention.id)
+    let read_mention = PersonMention::read_uncached(pool, inserted_mention.id)
       .await
       .unwrap();
 
     let person_mention_update_form = PersonMentionUpdateForm { read: Some(false) };
     let updated_mention =
-      PersonMention::update(pool, inserted_mention.id, &person_mention_update_form)
+      PersonMention::update_uncached(pool, inserted_mention.id, &person_mention_update_form)
         .await
         .unwrap();
-    Comment::delete(pool, inserted_comment.id).await.unwrap();
-    Post::delete(pool, inserted_post.id).await.unwrap();
-    Community::delete(pool, inserted_community.id)
+    Comment::delete_uncached(pool, inserted_comment.id).await.unwrap();
+    Post::delete_uncached(pool, inserted_post.id).await.unwrap();
+    Community::delete_uncached(pool, inserted_community.id)
       .await
       .unwrap();
-    Person::delete(pool, inserted_person.id).await.unwrap();
-    Person::delete(pool, inserted_recipient.id).await.unwrap();
+    Person::delete_uncached(pool, inserted_person.id).await.unwrap();
+    Person::delete_uncached(pool, inserted_recipient.id).await.unwrap();
     Instance::delete(pool, inserted_instance.id).await.unwrap();
 
     assert_eq!(expected_mention, read_mention);

@@ -28,7 +28,7 @@ mod tests {
       person::{Person, PersonInsertForm},
       post::{Post, PostInsertForm},
     },
-    traits::{Crud, Followable},
+    traits::{UncachedCrud, Followable},
     utils::build_db_pool_for_tests,
   };
   use serial_test::serial;
@@ -48,7 +48,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_person = Person::create(pool, &new_person).await.unwrap();
+    let inserted_person = Person::create_uncached(pool, &new_person).await.unwrap();
 
     let another_person = PersonInsertForm::builder()
       .name("jerry_community_agg".into())
@@ -56,7 +56,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let another_inserted_person = Person::create(pool, &another_person).await.unwrap();
+    let another_inserted_person = Person::create_uncached(pool, &another_person).await.unwrap();
 
     let new_community = CommunityInsertForm::builder()
       .name("TIL_community_agg".into())
@@ -65,7 +65,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_community = Community::create(pool, &new_community).await.unwrap();
+    let inserted_community = Community::create_uncached(pool, &new_community).await.unwrap();
 
     let another_community = CommunityInsertForm::builder()
       .name("TIL_community_agg_2".into())
@@ -74,7 +74,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let another_inserted_community = Community::create(pool, &another_community).await.unwrap();
+    let another_inserted_community = Community::create_uncached(pool, &another_community).await.unwrap();
 
     let first_person_follow = CommunityFollowerForm {
       community_id: inserted_community.id,
@@ -112,7 +112,7 @@ mod tests {
       .community_id(inserted_community.id)
       .build();
 
-    let inserted_post = Post::create(pool, &new_post).await.unwrap();
+    let inserted_post = Post::create_uncached(pool, &new_post).await.unwrap();
 
     let comment_form = CommentInsertForm::builder()
       .content("A test comment".into())
@@ -168,7 +168,7 @@ mod tests {
     assert_eq!(2, after_follow_again.subscribers);
 
     // Remove a parent comment (the comment count should also be 0)
-    Post::delete(pool, inserted_post.id).await.unwrap();
+    Post::delete_uncached(pool, inserted_post.id).await.unwrap();
     let after_parent_post_delete = CommunityAggregates::read(pool, inserted_community.id)
       .await
       .unwrap();
@@ -176,7 +176,7 @@ mod tests {
     assert_eq!(0, after_parent_post_delete.posts);
 
     // Remove the 2nd person
-    Person::delete(pool, another_inserted_person.id)
+    Person::delete_uncached(pool, another_inserted_person.id)
       .await
       .unwrap();
     let after_person_delete = CommunityAggregates::read(pool, inserted_community.id)
@@ -185,16 +185,16 @@ mod tests {
     assert_eq!(1, after_person_delete.subscribers);
 
     // This should delete all the associated rows, and fire triggers
-    let person_num_deleted = Person::delete(pool, inserted_person.id).await.unwrap();
+    let person_num_deleted = Person::delete_uncached(pool, inserted_person.id).await.unwrap();
     assert_eq!(1, person_num_deleted);
 
     // Delete the community
-    let community_num_deleted = Community::delete(pool, inserted_community.id)
+    let community_num_deleted = Community::delete_uncached(pool, inserted_community.id)
       .await
       .unwrap();
     assert_eq!(1, community_num_deleted);
 
-    let another_community_num_deleted = Community::delete(pool, another_inserted_community.id)
+    let another_community_num_deleted = Community::delete_uncached(pool, another_inserted_community.id)
       .await
       .unwrap();
     assert_eq!(1, another_community_num_deleted);

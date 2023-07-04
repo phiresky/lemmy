@@ -8,18 +8,18 @@ use crate::{
     PersonInsertForm,
     PersonUpdateForm,
   },
-  traits::{ApubActor, Crud, Followable},
+  traits::{ApubActor, UncachedCrud, Followable},
   utils::{functions::lower, get_conn, naive_now, DbPool},
 };
 use diesel::{dsl::insert_into, result::Error, ExpressionMethods, JoinOnDsl, QueryDsl};
 use diesel_async::RunQueryDsl;
 
 #[async_trait]
-impl Crud for Person {
+impl UncachedCrud for Person {
   type InsertForm = PersonInsertForm;
   type UpdateForm = PersonUpdateForm;
   type IdType = PersonId;
-  async fn read(pool: &DbPool, person_id: PersonId) -> Result<Self, Error> {
+  async fn read_uncached(pool: &DbPool, person_id: PersonId) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     person::table
       .filter(person::deleted.eq(false))
@@ -27,20 +27,20 @@ impl Crud for Person {
       .first::<Self>(conn)
       .await
   }
-  async fn delete(pool: &DbPool, person_id: PersonId) -> Result<usize, Error> {
+  async fn delete_uncached(pool: &DbPool, person_id: PersonId) -> Result<usize, Error> {
     let conn = &mut get_conn(pool).await?;
     diesel::delete(person::table.find(person_id))
       .execute(conn)
       .await
   }
-  async fn create(pool: &DbPool, form: &PersonInsertForm) -> Result<Self, Error> {
+  async fn create_uncached(pool: &DbPool, form: &PersonInsertForm) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     insert_into(person::table)
       .values(form)
       .get_result::<Self>(conn)
       .await
   }
-  async fn update(
+  async fn update_uncached(
     pool: &DbPool,
     person_id: PersonId,
     form: &PersonUpdateForm,
@@ -202,7 +202,7 @@ mod tests {
       instance::Instance,
       person::{Person, PersonFollower, PersonFollowerForm, PersonInsertForm, PersonUpdateForm},
     },
-    traits::{Crud, Followable},
+    traits::{UncachedCrud, Followable},
     utils::build_db_pool_for_tests,
   };
   use serial_test::serial;
@@ -222,7 +222,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_person = Person::create(pool, &new_person).await.unwrap();
+    let inserted_person = Person::create_uncached(pool, &new_person).await.unwrap();
 
     let expected_person = Person {
       id: inserted_person.id,
@@ -249,16 +249,16 @@ mod tests {
       instance_id: inserted_instance.id,
     };
 
-    let read_person = Person::read(pool, inserted_person.id).await.unwrap();
+    let read_person = Person::read_uncached(pool, inserted_person.id).await.unwrap();
 
     let update_person_form = PersonUpdateForm::builder()
       .actor_id(Some(inserted_person.actor_id.clone()))
       .build();
-    let updated_person = Person::update(pool, inserted_person.id, &update_person_form)
+    let updated_person = Person::update_uncached(pool, inserted_person.id, &update_person_form)
       .await
       .unwrap();
 
-    let num_deleted = Person::delete(pool, inserted_person.id).await.unwrap();
+    let num_deleted = Person::delete_uncached(pool, inserted_person.id).await.unwrap();
     Instance::delete(pool, inserted_instance.id).await.unwrap();
 
     assert_eq!(expected_person, read_person);
@@ -280,13 +280,13 @@ mod tests {
       .public_key("pubkey".to_string())
       .instance_id(inserted_instance.id)
       .build();
-    let person_1 = Person::create(pool, &person_form_1).await.unwrap();
+    let person_1 = Person::create_uncached(pool, &person_form_1).await.unwrap();
     let person_form_2 = PersonInsertForm::builder()
       .name("michele".into())
       .public_key("pubkey".to_string())
       .instance_id(inserted_instance.id)
       .build();
-    let person_2 = Person::create(pool, &person_form_2).await.unwrap();
+    let person_2 = Person::create_uncached(pool, &person_form_2).await.unwrap();
 
     let follow_form = PersonFollowerForm {
       person_id: person_1.id,

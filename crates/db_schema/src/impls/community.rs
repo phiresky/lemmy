@@ -15,7 +15,7 @@ use crate::{
       CommunityUpdateForm,
     },
   },
-  traits::{ApubActor, Bannable, Crud, Followable, Joinable},
+  traits::{ApubActor, Bannable, UncachedCrud, Followable, Joinable},
   utils::{functions::lower, get_conn, DbPool},
   SubscribedType,
 };
@@ -23,11 +23,11 @@ use diesel::{dsl::insert_into, result::Error, ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
 
 #[async_trait]
-impl Crud for Community {
+impl UncachedCrud for Community {
   type InsertForm = CommunityInsertForm;
   type UpdateForm = CommunityUpdateForm;
   type IdType = CommunityId;
-  async fn read(pool: &DbPool, community_id: CommunityId) -> Result<Self, Error> {
+  async fn read_uncached(pool: &DbPool, community_id: CommunityId) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     community::table
       .find(community_id)
@@ -35,14 +35,14 @@ impl Crud for Community {
       .await
   }
 
-  async fn delete(pool: &DbPool, community_id: CommunityId) -> Result<usize, Error> {
+  async fn delete_uncached(pool: &DbPool, community_id: CommunityId) -> Result<usize, Error> {
     let conn = &mut get_conn(pool).await?;
     diesel::delete(community::table.find(community_id))
       .execute(conn)
       .await
   }
 
-  async fn create(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
+  async fn create_uncached(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     let is_new_community = match &form.actor_id {
       Some(id) => Community::read_from_apub_id(pool, id).await?.is_none(),
@@ -66,7 +66,7 @@ impl Crud for Community {
     Ok(community_)
   }
 
-  async fn update(
+  async fn update_uncached(
     pool: &DbPool,
     community_id: CommunityId,
     form: &Self::UpdateForm,
@@ -344,7 +344,7 @@ mod tests {
       instance::Instance,
       person::{Person, PersonInsertForm},
     },
-    traits::{Bannable, Crud, Followable, Joinable},
+    traits::{Bannable, UncachedCrud, Followable, Joinable},
     utils::build_db_pool_for_tests,
   };
   use serial_test::serial;
@@ -364,7 +364,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_person = Person::create(pool, &new_person).await.unwrap();
+    let inserted_person = Person::create_uncached(pool, &new_person).await.unwrap();
 
     let new_community = CommunityInsertForm::builder()
       .name("TIL".into())
@@ -373,7 +373,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_community = Community::create(pool, &new_community).await.unwrap();
+    let inserted_community = Community::create_uncached(pool, &new_community).await.unwrap();
 
     let expected_community = Community {
       id: inserted_community.id,
@@ -454,12 +454,12 @@ mod tests {
       expires: None,
     };
 
-    let read_community = Community::read(pool, inserted_community.id).await.unwrap();
+    let read_community = Community::read_uncached(pool, inserted_community.id).await.unwrap();
 
     let update_community_form = CommunityUpdateForm::builder()
       .title(Some("nada".to_owned()))
       .build();
-    let updated_community = Community::update(pool, inserted_community.id, &update_community_form)
+    let updated_community = Community::update_uncached(pool, inserted_community.id, &update_community_form)
       .await
       .unwrap();
 
@@ -472,10 +472,10 @@ mod tests {
     let unban = CommunityPersonBan::unban(pool, &community_person_ban_form)
       .await
       .unwrap();
-    let num_deleted = Community::delete(pool, inserted_community.id)
+    let num_deleted = Community::delete_uncached(pool, inserted_community.id)
       .await
       .unwrap();
-    Person::delete(pool, inserted_person.id).await.unwrap();
+    Person::delete_uncached(pool, inserted_person.id).await.unwrap();
     Instance::delete(pool, inserted_instance.id).await.unwrap();
 
     assert_eq!(expected_community, read_community);

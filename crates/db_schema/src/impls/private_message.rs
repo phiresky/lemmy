@@ -2,7 +2,7 @@ use crate::{
   newtypes::{DbUrl, PersonId, PrivateMessageId},
   schema::private_message::dsl::{ap_id, private_message, read, recipient_id},
   source::private_message::{PrivateMessage, PrivateMessageInsertForm, PrivateMessageUpdateForm},
-  traits::Crud,
+  traits::UncachedCrud,
   utils::{get_conn, DbPool},
 };
 use diesel::{dsl::insert_into, result::Error, ExpressionMethods, QueryDsl};
@@ -11,11 +11,11 @@ use lemmy_utils::error::LemmyError;
 use url::Url;
 
 #[async_trait]
-impl Crud for PrivateMessage {
+impl UncachedCrud for PrivateMessage {
   type InsertForm = PrivateMessageInsertForm;
   type UpdateForm = PrivateMessageUpdateForm;
   type IdType = PrivateMessageId;
-  async fn read(pool: &DbPool, private_message_id: PrivateMessageId) -> Result<Self, Error> {
+  async fn read_uncached(pool: &DbPool, private_message_id: PrivateMessageId) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     private_message
       .find(private_message_id)
@@ -23,7 +23,7 @@ impl Crud for PrivateMessage {
       .await
   }
 
-  async fn create(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
+  async fn create_uncached(pool: &DbPool, form: &Self::InsertForm) -> Result<Self, Error> {
     let conn = &mut get_conn(pool).await?;
     insert_into(private_message)
       .values(form)
@@ -34,7 +34,7 @@ impl Crud for PrivateMessage {
       .await
   }
 
-  async fn update(
+  async fn update_uncached(
     pool: &DbPool,
     private_message_id: PrivateMessageId,
     form: &Self::UpdateForm,
@@ -45,7 +45,7 @@ impl Crud for PrivateMessage {
       .get_result::<Self>(conn)
       .await
   }
-  async fn delete(pool: &DbPool, pm_id: Self::IdType) -> Result<usize, Error> {
+  async fn delete_uncached(pool: &DbPool, pm_id: Self::IdType) -> Result<usize, Error> {
     let conn = &mut get_conn(pool).await?;
     diesel::delete(private_message.find(pm_id))
       .execute(conn)
@@ -94,7 +94,7 @@ mod tests {
       person::{Person, PersonInsertForm},
       private_message::{PrivateMessage, PrivateMessageInsertForm, PrivateMessageUpdateForm},
     },
-    traits::Crud,
+    traits::UncachedCrud,
     utils::build_db_pool_for_tests,
   };
   use serial_test::serial;
@@ -114,7 +114,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_creator = Person::create(pool, &creator_form).await.unwrap();
+    let inserted_creator = Person::create_uncached(pool, &creator_form).await.unwrap();
 
     let recipient_form = PersonInsertForm::builder()
       .name("recipient_pm".into())
@@ -122,7 +122,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_recipient = Person::create(pool, &recipient_form).await.unwrap();
+    let inserted_recipient = Person::create_uncached(pool, &recipient_form).await.unwrap();
 
     let private_message_form = PrivateMessageInsertForm::builder()
       .content("A test private message".into())
@@ -130,7 +130,7 @@ mod tests {
       .recipient_id(inserted_recipient.id)
       .build();
 
-    let inserted_private_message = PrivateMessage::create(pool, &private_message_form)
+    let inserted_private_message = PrivateMessage::create_uncached(pool, &private_message_form)
       .await
       .unwrap();
 
@@ -147,14 +147,14 @@ mod tests {
       local: true,
     };
 
-    let read_private_message = PrivateMessage::read(pool, inserted_private_message.id)
+    let read_private_message = PrivateMessage::read_uncached(pool, inserted_private_message.id)
       .await
       .unwrap();
 
     let private_message_update_form = PrivateMessageUpdateForm::builder()
       .content(Some("A test private message".into()))
       .build();
-    let updated_private_message = PrivateMessage::update(
+    let updated_private_message = PrivateMessage::update_uncached(
       pool,
       inserted_private_message.id,
       &private_message_update_form,
@@ -162,7 +162,7 @@ mod tests {
     .await
     .unwrap();
 
-    let deleted_private_message = PrivateMessage::update(
+    let deleted_private_message = PrivateMessage::update_uncached(
       pool,
       inserted_private_message.id,
       &PrivateMessageUpdateForm::builder()
@@ -171,15 +171,15 @@ mod tests {
     )
     .await
     .unwrap();
-    let marked_read_private_message = PrivateMessage::update(
+    let marked_read_private_message = PrivateMessage::update_uncached(
       pool,
       inserted_private_message.id,
       &PrivateMessageUpdateForm::builder().read(Some(true)).build(),
     )
     .await
     .unwrap();
-    Person::delete(pool, inserted_creator.id).await.unwrap();
-    Person::delete(pool, inserted_recipient.id).await.unwrap();
+    Person::delete_uncached(pool, inserted_creator.id).await.unwrap();
+    Person::delete_uncached(pool, inserted_recipient.id).await.unwrap();
     Instance::delete(pool, inserted_instance.id).await.unwrap();
 
     assert_eq!(expected_private_message, read_private_message);

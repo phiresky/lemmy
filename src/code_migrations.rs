@@ -32,7 +32,7 @@ use lemmy_db_schema::{
     private_message::{PrivateMessage, PrivateMessageUpdateForm},
     site::{Site, SiteInsertForm, SiteUpdateForm},
   },
-  traits::Crud,
+  traits::UncachedCrud,
   utils::{get_conn, naive_now, DbPool},
 };
 use lemmy_utils::{error::LemmyError, settings::structs::Settings};
@@ -85,7 +85,7 @@ async fn user_updates_2020_04_02(
       .last_refreshed_at(Some(naive_now()))
       .build();
 
-    Person::update(pool, cperson.id, &form).await?;
+    Person::update_uncached(pool, cperson.id, &form).await?;
   }
 
   info!("{} person rows updated.", incorrect_persons.len());
@@ -124,7 +124,7 @@ async fn community_updates_2020_04_02(
       .last_refreshed_at(Some(naive_now()))
       .build();
 
-    Community::update(pool, ccommunity.id, &form).await?;
+    Community::update_uncached(pool, ccommunity.id, &form).await?;
   }
 
   info!("{} community rows updated.", incorrect_communities.len());
@@ -154,7 +154,7 @@ async fn post_updates_2020_04_03(
       &cpost.id.to_string(),
       protocol_and_hostname,
     )?;
-    Post::update(
+    Post::update_uncached(
       pool,
       cpost.id,
       &PostUpdateForm::builder().ap_id(Some(apub_id)).build(),
@@ -189,7 +189,7 @@ async fn comment_updates_2020_04_03(
       &ccomment.id.to_string(),
       protocol_and_hostname,
     )?;
-    Comment::update(
+    Comment::update_uncached(
       pool,
       ccomment.id,
       &CommentUpdateForm::builder().ap_id(Some(apub_id)).build(),
@@ -224,7 +224,7 @@ async fn private_message_updates_2020_05_05(
       &cpm.id.to_string(),
       protocol_and_hostname,
     )?;
-    PrivateMessage::update(
+    PrivateMessage::update_uncached(
       pool,
       cpm.id,
       &PrivateMessageUpdateForm::builder()
@@ -348,7 +348,7 @@ async fn instance_actor_2022_01_28(
       .private_key(Some(Some(key_pair.private_key)))
       .public_key(Some(key_pair.public_key))
       .build();
-    Site::update(pool, site.id, &site_form).await?;
+    Site::update_uncached(pool, site.id, &site_form).await?;
   }
   Ok(())
 }
@@ -380,7 +380,7 @@ async fn regenerate_public_keys_2022_07_05(pool: &DbPool) -> Result<(), LemmyErr
         .public_key(Some(key_pair.public_key))
         .private_key(Some(Some(key_pair.private_key)))
         .build();
-      Community::update(pool, community_.id, &form).await?;
+      Community::update_uncached(pool, community_.id, &form).await?;
     }
   }
 
@@ -402,7 +402,7 @@ async fn regenerate_public_keys_2022_07_05(pool: &DbPool) -> Result<(), LemmyErr
         .public_key(Some(key_pair.public_key))
         .private_key(Some(Some(key_pair.private_key)))
         .build();
-      Person::update(pool, person_.id, &form).await?;
+      Person::update_uncached(pool, person_.id, &form).await?;
     }
   }
   Ok(())
@@ -450,14 +450,14 @@ async fn initialize_local_site_2022_10_10(
       .inbox_url(Some(generate_inbox_url(&person_actor_id)?))
       .shared_inbox_url(Some(generate_shared_inbox_url(&person_actor_id)?))
       .build();
-    let person_inserted = Person::create(pool, &person_form).await?;
+    let person_inserted = Person::create_uncached(pool, &person_form).await?;
 
     let local_user_form = LocalUserInsertForm::builder()
       .person_id(person_inserted.id)
       .password_encrypted(setup.admin_password.clone())
       .email(setup.admin_email.clone())
       .build();
-    LocalUser::create(pool, &local_user_form).await?;
+    LocalUser::create_uncached(pool, &local_user_form).await?;
   };
 
   // Add an entry for the site table
@@ -479,7 +479,7 @@ async fn initialize_local_site_2022_10_10(
     .private_key(Some(site_key_pair.private_key))
     .public_key(Some(site_key_pair.public_key))
     .build();
-  let site = Site::create(pool, &site_form).await?;
+  let site = Site::create_uncached(pool, &site_form).await?;
 
   // Finally create the local_site row
   let local_site_form = LocalSiteInsertForm::builder()

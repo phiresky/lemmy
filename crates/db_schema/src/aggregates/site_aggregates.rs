@@ -25,7 +25,7 @@ mod tests {
       post::{Post, PostInsertForm},
       site::{Site, SiteInsertForm},
     },
-    traits::Crud,
+    traits::UncachedCrud,
     utils::build_db_pool_for_tests,
   };
   use serial_test::serial;
@@ -45,14 +45,14 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_person = Person::create(pool, &new_person).await.unwrap();
+    let inserted_person = Person::create_uncached(pool, &new_person).await.unwrap();
 
     let site_form = SiteInsertForm::builder()
       .name("test_site".into())
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_site = Site::create(pool, &site_form).await.unwrap();
+    let inserted_site = Site::create_uncached(pool, &site_form).await.unwrap();
 
     let new_community = CommunityInsertForm::builder()
       .name("TIL_site_agg".into())
@@ -61,7 +61,7 @@ mod tests {
       .instance_id(inserted_instance.id)
       .build();
 
-    let inserted_community = Community::create(pool, &new_community).await.unwrap();
+    let inserted_community = Community::create_uncached(pool, &new_community).await.unwrap();
 
     let new_post = PostInsertForm::builder()
       .name("A test post".into())
@@ -70,8 +70,8 @@ mod tests {
       .build();
 
     // Insert two of those posts
-    let inserted_post = Post::create(pool, &new_post).await.unwrap();
-    let _inserted_post_again = Post::create(pool, &new_post).await.unwrap();
+    let inserted_post = Post::create_uncached(pool, &new_post).await.unwrap();
+    let _inserted_post_again = Post::create_uncached(pool, &new_post).await.unwrap();
 
     let comment_form = CommentInsertForm::builder()
       .content("A test comment".into())
@@ -102,17 +102,17 @@ mod tests {
     assert_eq!(2, site_aggregates_before_delete.comments);
 
     // Try a post delete
-    Post::delete(pool, inserted_post.id).await.unwrap();
+    Post::delete_uncached(pool, inserted_post.id).await.unwrap();
     let site_aggregates_after_post_delete = SiteAggregates::read(pool).await.unwrap();
     assert_eq!(1, site_aggregates_after_post_delete.posts);
     assert_eq!(0, site_aggregates_after_post_delete.comments);
 
     // This shouuld delete all the associated rows, and fire triggers
-    let person_num_deleted = Person::delete(pool, inserted_person.id).await.unwrap();
+    let person_num_deleted = Person::delete_uncached(pool, inserted_person.id).await.unwrap();
     assert_eq!(1, person_num_deleted);
 
     // Delete the community
-    let community_num_deleted = Community::delete(pool, inserted_community.id)
+    let community_num_deleted = Community::delete_uncached(pool, inserted_community.id)
       .await
       .unwrap();
     assert_eq!(1, community_num_deleted);
@@ -121,7 +121,7 @@ mod tests {
     let after_delete_creator = SiteAggregates::read(pool).await;
     assert!(after_delete_creator.is_ok());
 
-    Site::delete(pool, inserted_site.id).await.unwrap();
+    Site::delete_uncached(pool, inserted_site.id).await.unwrap();
     let after_delete_site = SiteAggregates::read(pool).await;
     assert!(after_delete_site.is_err());
 
