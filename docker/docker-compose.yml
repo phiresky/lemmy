@@ -99,18 +99,15 @@ services:
     command:
       [
         "postgres",
-        "-c",
-        "shared_preload_libraries=auto_explain,pg_stat_statements",
+        "-c", "shared_preload_libraries=auto_explain,pg_stat_statements",
         "-c", "pg_stat_statements.track=all", # also track nested statements
-        "-c",
-        "auto_explain.log_min_duration=100ms",
-        # "-c", "auto_explain.log_analyze=true", # warning! impacts perforance a lot according to https://www.postgresql.org/docs/current/auto-explain.html#id-1.11.7.13.5
-        "-c",
-        "track_activity_query_size=1048576",
-        "-c",
-        "max_connections=200",
+        "-c", "auto_explain.log_min_duration=100ms",
+        # "-c", "auto_explain.log_analyze=true", # warning! impacts perforance according to https://www.postgresql.org/docs/current/auto-explain.html#id-1.11.7.13.5
+        "-c", "track_activity_query_size=1048576",
+        "-c", "max_connections=200",
         "-c", "logging_collector=on",
         "-c", "log_rotation_size=1GB",
+        "-c", "synchronous_commit=off",
         "-c", "log_min_duration_statement=10ms",
         # "-c", "log_statement=all",
         "-c", "shared_buffers=4GB",

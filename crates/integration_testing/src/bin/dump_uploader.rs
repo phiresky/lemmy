@@ -8,7 +8,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use clap::{arg, Parser};
 use diesel::QueryableByName;
-use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use diesel_async::{RunQueryDsl, AsyncPgConnection, AsyncConnection};
 use integration_testing::{import_zstd_json_dump, jsonld_context, DontCareActixError, ToApub};
 use serde::Serialize;
 use serde_json::json;
@@ -86,6 +86,7 @@ impl Actor for RedditActor {
   }
 }
 
+#[derive(Clone)]
 struct RData {
   server_url: Url,
 }
@@ -178,12 +179,13 @@ async fn http_get_user(
 
 #[tokio::main]
 async fn main() -> Result<()> {
+  tracing_subscriber::fmt::init();
   let opt = UploadOptions::parse();
   let rdata = RData {
     server_url: opt.local_server.clone(),
   };
   let reddit_actor = RedditActor {
-    server_url: rdata.server_url,
+    server_url: rdata.server_url.clone(),
   };
   let fed = FederationConfig::builder()
     .domain("reddit.com.local")
@@ -193,8 +195,9 @@ async fn main() -> Result<()> {
     .worker_count(opt.federation_workers)
     .build()
     .await?;
-  let server = HttpServer::new(|| {
+  let server = HttpServer::new(move || {
     App::new()
+      .app_data(web::Data::new(rdata.clone()))
       .service(http_get_user)
       .service(http_get_community)
   })
@@ -244,15 +247,18 @@ async fn main() -> Result<()> {
     let st: DbStat = sql_query("select * from
     (select count(*) as comment_count from comment) a,
     (select count(*) as post_count from post) b,
+    (select count(*) as post_like_count from post_like) b1,
+    (select count(*) as comment_like_count from comment_like) b2,
+
     (select count(*) as activity_count from activity) d,
     (select count(*) as statement_count, sum(calls)::bigint as statement_call_count, 
         sum(total_plan_time)/1000 as total_plan_time_s, sum(total_exec_time)/1000 as total_exec_time_s from pg_stat_statements where query != 'SELECT $1') c,
     (select json_agg(row_to_json(top_queries)) as top_queries_by_call_count
-      from (select query, calls, total_exec_time, mean_exec_time, rows  from pg_stat_statements order by calls desc limit 20) top_queries) t,
+      from (select query, toplevel, calls, total_exec_time, mean_exec_time, rows  from pg_stat_statements order by calls desc limit 20) top_queries) t,
     (select json_agg(row_to_json(top_queries)) as top_queries_by_mean_time
-      from (select query, calls, total_exec_time, mean_exec_time, rows  from pg_stat_statements order by mean_exec_time desc limit 20) top_queries) t2,
+      from (select query, toplevel, calls, total_exec_time, mean_exec_time, rows  from pg_stat_statements order by mean_exec_time desc limit 20) top_queries) t2,
     (select json_agg(row_to_json(top_queries)) as top_queries_by_total_time
-      from (select query, calls, total_exec_time, mean_exec_time, rows  from pg_stat_statements order by total_exec_time desc limit 20) top_queries) t3
+      from (select query, toplevel, calls, total_exec_time, mean_exec_time, rows  from pg_stat_statements order by total_exec_time desc limit 20) top_queries) t3
       
       ;
     ").get_result(&mut conn).await?;
@@ -279,6 +285,10 @@ struct DbStat {
   comment_count: i64,
   #[diesel(sql_type=diesel::sql_types::BigInt)]
   post_count: i64,
+  #[diesel(sql_type=diesel::sql_types::BigInt)]
+  comment_like_count: i64,
+  #[diesel(sql_type=diesel::sql_types::BigInt)]
+  post_like_count: i64,
   #[diesel(sql_type=diesel::sql_types::BigInt)]
   activity_count: i64,
   #[diesel(sql_type=diesel::sql_types::BigInt)]

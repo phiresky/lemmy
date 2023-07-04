@@ -38,8 +38,8 @@ done
 echo server up
 
 
-RUST_LOG=warn target/release/integration_testing --remote-server http://lemmy.localhost:8536/inbox \
-    --input-dir ~/reddit --limit 100000 --skip 0 --output-json $rundir/info.json \
+RUST_LOG=warn target/release/dump_uploader --remote-server http://lemmy.localhost:8536/inbox \
+    --input-file crates/integration_testing/dump.jsonl.zst --output-json $rundir/info.json \
     --runname $runname \
     > $rundir/upload.log
 

@@ -1,8 +1,6 @@
-use activitypub_federation::traits::{ActivityHandler, Actor};
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_stream::stream;
 use clap::Parser;
-use diesel::QueryableByName;
 use futures::StreamExt;
 use futures_core::stream::Stream;
 use indexmap::IndexSet;
@@ -21,7 +19,7 @@ use std::{
   time::{Duration, Instant},
 };
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use url::Url;
 const SERVER_URL: &str = "http://reddit.com.localhost:5313/"; // TODO: read from options
 
@@ -231,6 +229,7 @@ struct Vote {
   id: Url,
   actor: Url,
   object: Url,
+  raw_object_id: String,
   r#type: LikeOrD,
   audience: Url,
 }
@@ -240,6 +239,7 @@ impl Vote {
       id: self.id.clone(),
       actor: self.actor.clone(),
       raw: json!({
+        "@context": jsonld_context(),
         "object": self.object,
         "type": self.r#type,
         "audience": self.audience,
@@ -277,7 +277,8 @@ impl Ord for SubmissionOrComment {
 }
 impl PartialOrd for SubmissionOrComment {
   fn partial_cmp(&self, other: &Self) -> std::option::Option<std::cmp::Ordering> {
-    self.created(10.0).partial_cmp(&other.created(10.0))
+    let delay_comments_seconds = 60;
+    self.created(60.0).partial_cmp(&other.created(60.0))
   }
 }
 
@@ -346,12 +347,6 @@ struct FakeVotes {
   users: IndexSet<String>,
   receiver: UnboundedReceiver<SubmissionOrComment>,
 }
-/* impl FakeVotes {
-  async fn add(&self, r: &Result<SubmissionOrComment>) {
-    let Ok(r) = r else { return };
-    let votes = self.votes.lock().await;
-  }
-}*/
 impl Stream for FakeVotes {
   type Item = Result<SubmissionOrComment>;
 
@@ -364,11 +359,12 @@ impl Stream for FakeVotes {
     let done = loop {
       match this.receiver.poll_recv(cx) {
         Poll::Ready(Some(r)) => {
-          let (id, community, time, (upvotes, downvotes)) = match r {
+          let (id, url, community, time, (upvotes, downvotes)) = match r {
             SubmissionOrComment::Vote { .. } => panic!("impossibl"),
             SubmissionOrComment::Submission(s) => {
               this.users.insert(s.author.clone());
               (
+                s.id.clone(),
                 s.url().unwrap(),
                 s.community_url().unwrap(),
                 s.created(),
@@ -378,6 +374,7 @@ impl Stream for FakeVotes {
             SubmissionOrComment::Comment(c) => {
               this.users.insert(c.author.clone());
               (
+                c.id.clone(),
                 c.url().unwrap(),
                 c.community_url().unwrap(),
                 c.created(),
@@ -392,7 +389,7 @@ impl Stream for FakeVotes {
             }
           };
           if upvotes + downvotes > 1000 {
-            tracing::warn!("{}>1000 votes on {}!", upvotes + downvotes, id);
+            tracing::warn!("{}>1000 votes on {}!", upvotes + downvotes, url);
           }
           let mut rng = rand::thread_rng();
           for i in 0..upvotes + downvotes {
@@ -405,12 +402,13 @@ impl Stream for FakeVotes {
               .users
               .get_index(rng.gen_range(0..this.users.len()))
               .unwrap();
-            let id = id.clone();
+            let url = url.clone();
             this.votes.push(Reverse(SubmissionOrComment::Vote(Vote {
               id: permalink(&format!("activity-vote/{id}.{i}")).unwrap(),
-              created_utc: time + Duration::from_secs(rng.gen_range(0..2 * 60 * 60)),
+              created_utc: time + Duration::from_secs(rng.gen_range(2 * 60..2 * 60 * 60)),
               actor: author_url(user).unwrap(),
-              object: id,
+              object: url,
+              raw_object_id: id.clone(),
               r#type,
               audience: community.clone(),
             })));
@@ -431,16 +429,34 @@ impl Stream for FakeVotes {
     }
   }
 }
-fn add_fake_votes(
+async fn add_fake_votes(
   stream: impl Stream<Item = Result<SubmissionOrComment>>,
-) -> impl Stream<Item = Result<SubmissionOrComment>> {
+) -> (
+  UnboundedSender<SubmissionOrComment>,
+  impl Stream<Item = Result<SubmissionOrComment>>,
+) {
   let (s, receiver) = tokio::sync::mpsc::unbounded_channel();
   let votes = FakeVotes {
     votes: BinaryHeap::new(),
     receiver,
     users: IndexSet::new(),
   };
-  let stream = {
+  let mut stream = Box::pin(stream.peekable());
+
+  s.send(
+    stream
+      .as_mut()
+      .peek()
+      .await
+      .as_ref()
+      .unwrap()
+      .as_ref()
+      .unwrap()
+      .clone(),
+  )
+  .map_err(|_| anyhow!("q closed"))
+  .unwrap();
+  /*let stream = {
     //let votes = votes.clone();
     stream
       .inspect(move |item| {
@@ -449,8 +465,8 @@ fn add_fake_votes(
         s.send(item).map_err(|_| "cuodnlet send").unwrap();
       })
       .skip(10) // preload a few
-  };
-  merge_streams(stream, votes, less_than_r)
+  };*/
+  (s, merge_streams(stream, votes, less_than_r))
 }
 
 fn permalink(p: &str) -> Result<Url> {
@@ -645,17 +661,20 @@ pub async fn main() -> Result<()> {
   let mut outfile = zstd::stream::Encoder::new(
     File::create(opt.output_file).context("creating output file")?,
     19,
-  )?.auto_finish();
+  )?
+  .auto_finish();
 
-  let mut stream = pin!(add_fake_votes(
+  let (saw_thing, stream) = add_fake_votes(
     import_merged_reddit_dump(Path::new(&opt.input_dir), "2022-12")
       .await?
       .skip(if opt.skip > 0 {
         (opt.skip - 1) as usize
       } else {
         0
-      })
-  ));
+      }),
+  )
+  .await;
+  let mut stream = pin!(stream);
   if opt.skip > 0 {
     let now = Instant::now();
     stream.next().await; // ensure one is read to enforce skipping now
@@ -693,7 +712,14 @@ pub async fn main() -> Result<()> {
       SubmissionOrComment::Submission(post) => {
         if opt
           .comment_to_post_ratio
-          .map(|ratio| post.num_comments < 10 && comment_to_post_ratio / ratio < 0.95)
+          .map(|ratio| {
+            // always send first 10 posts because otherwise deadlock with votes
+            // post_send_count > 10 &&
+            // always send post with >= 10 comments
+            post.num_comments < 10 &&
+            // always send post if c/p ratio is reached
+            comment_to_post_ratio / ratio < 0.95
+          })
           .unwrap_or(false)
         {
           post_skip_count += 1;
@@ -704,6 +730,9 @@ pub async fn main() -> Result<()> {
           posts_cache.insert(post.id.clone(), post.clone());
           total_send_count += 1;
           post_send_count += 1;
+          saw_thing
+            .send(SubmissionOrComment::Submission(post))
+            .map_err(|_| anyhow!("couldnt send"))?;
           serde_json::to_writer(&mut outfile, &post_apub)?; // todo: this is blocking
           outfile.write(b"\n")?;
         }
@@ -716,11 +745,19 @@ pub async fn main() -> Result<()> {
           comments_cache.insert(comment.id.clone(), comment.clone());
           total_send_count += 1;
           comment_send_count += 1;
+          saw_thing
+            .send(SubmissionOrComment::Comment(comment))
+            .map_err(|_| anyhow!("couldnt send c"))?;
           serde_json::to_writer(&mut outfile, &comment_apub)?; // todo: this is blocking
           outfile.write(b"\n")?;
         }
       }
       SubmissionOrComment::Vote(vote) => {
+        if !comments_cache.contains_key(&vote.raw_object_id)
+          && !posts_cache.contains_key(&vote.raw_object_id)
+        {
+          continue;
+        }
         let vote_apub = vote
           .to_activitypub()
           .context("converting comment to apub")?;
